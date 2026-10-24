@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notefloat</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <span class="label">Buffers</span>
+          <button id="new-buffer" class="icon" title="新建 buffer (⌘⇧N)">＋</button>
+        </div>
+        <ul class="buffers" id="buffers"></ul>
+      </aside>
+      <main class="main">
+        <header class="titlebar">
+          <button id="toggle-sidebar" class="icon" title="显示/隐藏侧边栏 (⌘B)">☰</button>
+          <input id="title" class="title" spellcheck="false" autocomplete="off" />
+          <span class="status" id="status"></span>
+        </header>
+        <div class="editor" id="editor"></div>
+      </main>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
