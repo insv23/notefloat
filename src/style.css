@@ -9,6 +9,9 @@
   --hover: rgba(0, 0, 0, 0.05);
   --active: rgba(0, 0, 0, 0.09);
   --accent: #3b82f6;
+  --danger: #c0392b;
+  --panel: #ffffff;
+  --scrim: rgba(0, 0, 0, 0.16);
   --titlebar-height: 38px;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -22,6 +25,9 @@
     --line: rgba(255, 255, 255, 0.08);
     --hover: rgba(255, 255, 255, 0.06);
     --active: rgba(255, 255, 255, 0.1);
+    --danger: #ff8a7a;
+    --panel: #1f2228;
+    --scrim: rgba(0, 0, 0, 0.36);
   }
 }
 
@@ -47,6 +53,7 @@ textarea {
   background: var(--bg);
   border-radius: 12px;
   overflow: hidden;
+  position: relative;
 }
 
 /* ---- sidebar ---- */
@@ -69,11 +76,291 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 4px;
   height: var(--titlebar-height);
-  padding: 0 8px 0 14px;
+  padding: 0 8px;
 }
 
-.label {
+/* The search sits under the head's icons, as a field that opens the search
+   dialog: the key it opens with is printed at its end. */
+.sidebar-launch {
+  padding: 0 8px 6px;
+  --app-region: no-drag;
+}
+
+.search-launch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  padding: 0 5px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.search-launch:hover {
+  border-color: color-mix(in srgb, var(--fg) 16%, transparent);
+}
+
+.search-launch svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+}
+
+.search-launch-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-launch-key {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+.sidebar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  --app-region: no-drag;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 8px;
+}
+
+/* Aa is the switch both search boxes carry: the query matches case once it is
+   on, and the label says which way it stands. */
+.search-case,
+.find-case {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  padding: 1px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.search-case.on,
+.find-case.on {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+/* ---- the search of every note ---- */
+
+/* A layer over the panel that takes the press outside the card, so that a
+   click anywhere else closes the search, and the query it holds stays. */
+.search-dialog {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: var(--scrim);
+  border-radius: 12px;
+  --app-region: no-drag;
+}
+
+.search-dialog[hidden] {
+  display: none;
+}
+
+/* A card one step smaller than the settings: the search reads as a thing laid
+   over the panel, not as a window of its own. */
+.search-card {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100% - 72px));
+  max-height: min(440px, 68vh);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.26);
+  overflow: hidden;
+}
+
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search-glyph {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.search-input:focus {
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+}
+
+.search-note {
+  margin: 10px 0 2px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-hit {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  padding: 5px 8px 6px;
+  text-align: left;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.search-hit:hover,
+.search-hit.current {
+  background: var(--hover);
+}
+
+/* The line the query found, with the line above and below it: the three read
+   as one piece of the note, and only the word found is marked. */
+.search-line,
+.search-context {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-line {
+  color: var(--fg);
+}
+
+.search-context {
+  color: var(--muted);
+}
+
+.search-hit mark {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.search-empty {
+  margin: 6px 0;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The settings live at the bottom of the sidebar, where macOS puts the less
+   often used half of a sidebar. */
+.sidebar-foot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  border-top: 1px solid var(--line);
+  --app-region: no-drag;
+}
+
+.sidebar-foot .settings-entry {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-entry {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.settings-entry:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.settings-entry svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* A section label, unlike a folder's name: small, spaced out, uppercase, and
+   without an icon. Icons belong to things the sidebar holds, and one column of
+   them reads better than a mark on the label as well. */
+.group-title {
+  margin: 10px 0 2px;
+  padding: 0 7px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -81,18 +368,112 @@ textarea {
   color: var(--muted);
 }
 
+.group-empty {
+  padding: 4px 8px 4px 26px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* The line under the pinned notes: what is above it is a section, what is
+   below it is the folders. */
+.sidebar-rule {
+  margin: 10px 8px 6px;
+  border-top: 1px solid var(--line);
+}
+
+.folders {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.folders,
+.buffers,
+.folder,
+.folder-head,
+.folder-name,
+.buffer {
+  --app-region: no-drag;
+}
+
+.folder {
+  margin-bottom: 6px;
+}
+
+.folder.dragging {
+  opacity: 0.45;
+}
+
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px 3px 7px;
+  border-radius: 6px;
+}
+
+.folder-head:hover {
+  background: var(--hover);
+}
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.folder-glyph {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.folder-rename {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  outline: none;
+}
+
+.folder-head .icon {
+  opacity: 0;
+  margin-left: -3px;
+}
+
+.folder-head:hover .icon {
+  opacity: 1;
+}
+
+/* Notes sit one step in from the folder and section titles above them, and
+   their titles start on the same line as the folder names they belong to. */
 .buffers {
   margin: 0;
-  padding: 4px 6px;
+  padding: 2px 0 0 18px;
   list-style: none;
-  overflow-y: auto;
 }
 
 .buffer {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   border-radius: 6px;
+  padding-right: 4px;
 }
 
 .buffer:hover {
@@ -105,6 +486,7 @@ textarea {
 
 .buffer-name {
   flex: 1;
+  min-width: 0;
   border: 0;
   background: none;
   padding: 5px 8px;
@@ -117,26 +499,84 @@ textarea {
   --app-region: no-drag;
 }
 
-.buffer-remove {
+/* The pin and the delete button of a note: one group at the row's right edge.
+   Their slots are always there, so the title never shifts, and a pinned note
+   keeps its pin in sight while the delete button stays out of the way. */
+.buffer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: 0 0 auto;
+}
+
+.buffer-actions .icon {
+  width: 20px;
+  height: 20px;
   opacity: 0;
-  font-size: 13px;
   --app-region: no-drag;
 }
 
-.buffer:hover .buffer-remove {
+.buffer:hover .buffer-actions .icon {
   opacity: 1;
+}
+
+.buffer-actions .buffer-pin.on {
+  opacity: 0.65;
+  color: var(--accent);
+}
+
+.buffer:hover .buffer-actions .buffer-pin.on {
+  opacity: 1;
+}
+
+.buffer-pin svg {
+  width: 11px;
+  height: 11px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.buffer-remove {
+  font-size: 13px;
+}
+
+/* Where a dragged note or folder would land. */
+.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.drop-into {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 6px;
 }
 
 .icon {
   border: 0;
   background: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 5px;
   color: var(--muted);
   line-height: 1;
   cursor: default;
   --app-region: no-drag;
+}
+
+.icon svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .icon:hover {
@@ -156,9 +596,9 @@ textarea {
 .titlebar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   height: var(--titlebar-height);
-  padding: 0 12px 0 8px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--line);
   --app-region: drag;
 }
@@ -177,9 +617,60 @@ textarea {
   outline: none;
 }
 
+/* The find bar of the note on screen, right under its title. */
+.findbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--line);
+  --app-region: no-drag;
+}
+
+.findbar[hidden] {
+  display: none;
+}
+
+.find-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.find-input:focus {
+  outline: none;
+}
+
+.find-input::placeholder {
+  color: var(--muted);
+}
+
+.find-count {
+  min-width: 62px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
 .status {
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+/* The sidebar carries its own toggle; the title bar holds one only while the
+   sidebar is away, where the button that hides it went with it. */
+#show-sidebar {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.no-sidebar #show-sidebar {
+  display: inline-flex;
 }
 
 .editor {
@@ -209,9 +700,19 @@ textarea {
 
 /* The text of a block is one row: the checkbox of a todo, then its text. */
 .blk-line {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 7px;
+}
+
+/* The word a search stopped on: a box laid over the text, since a text field
+   cannot paint part of its own text without the caret in it. */
+.find-mark {
+  position: absolute;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  pointer-events: none;
 }
 
 .blk textarea {
@@ -232,6 +733,12 @@ textarea {
   color: var(--muted);
 }
 
+/* The hint of an empty note runs to three lines, while an empty textarea
+   scrolls to one; the height autosize sets would cut the rest off. */
+.blk textarea:placeholder-shown {
+  min-height: calc(3 * 1.65em);
+}
+
 .blk-check {
   flex: 0 0 auto;
   width: 14px;
@@ -246,12 +753,26 @@ textarea {
   color: var(--muted);
 }
 
+/* Where a search stopped: the line the match is on, tinted so that stepping
+   through the matches shows even while the caret is in the find field. */
+
 /* A picture takes its place in the block's flow, with the line pasted after it
    following underneath. */
 .blk-pic {
   position: relative;
   width: fit-content;
   margin: 6px 0 2px;
+}
+
+/* A picture takes the keyboard when it is focused: the ring says so, and Enter
+   then writes a line under it. */
+.blk-pic:focus {
+  outline: none;
+}
+
+.blk-pic:focus img {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .blk-pic img {
@@ -285,4 +806,269 @@ textarea {
 /* The selection ⌘A makes and ⌘X removes: whole blocks, not text. */
 .blk.selected {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* ---- settings ---- */
+
+.settings {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+  border-radius: 12px;
+  --app-region: no-drag;
+}
+
+.settings[hidden] {
+  display: none;
+}
+
+/* A card rather than a page: set one step in from the panel, opaque, so that
+   the note underneath does not show through the settings. */
+.settings-panel {
+  display: flex;
+  width: min(700px, calc(100% - 56px));
+  height: min(500px, calc(100% - 56px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 156px;
+  flex: 0 0 156px;
+  padding: 12px 8px 10px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  border-right: 1px solid var(--line);
+}
+
+.settings-title {
+  margin: 4px 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-nav-item {
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 13px;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.settings-nav-item:hover {
+  background: var(--hover);
+}
+
+.settings-nav-item.active {
+  background: var(--active);
+}
+
+.settings-done {
+  margin-top: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--hover);
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.settings-done:hover {
+  background: var(--active);
+}
+
+.settings-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 22px 26px 20px;
+  /* Text here is to be read and selected, not to move the window by. */
+  --app-region: no-drag;
+}
+
+/* A page fills the body so that its footer sits at the bottom of the card,
+   whatever the page holds. */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.settings-page-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.settings-page[hidden] {
+  display: none;
+}
+
+.settings-heading {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-rows {
+  border-top: 1px solid var(--line);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.settings-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+/* A row whose value does not fit beside its label: the label keeps one line,
+   the path gets a line of its own and wraps instead of being cut off. */
+.settings-row-stacked {
+  display: block;
+}
+
+.settings-row-stacked .settings-label {
+  display: block;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+.settings-path-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.settings-button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--hover);
+  padding: 3px 9px;
+  font-size: 12px;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.settings-button:hover {
+  background: var(--active);
+}
+
+.settings-button:disabled {
+  opacity: 0.5;
+}
+
+.settings-icon {
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.settings-icon:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.key-button {
+  min-width: 62px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg);
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.key-button:hover {
+  background: var(--hover);
+}
+
+.key-button.recording {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.settings-error {
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.settings-about-name {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-about-version {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-number {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  width: 140px;
+  accent-color: var(--accent);
+  --app-region: no-drag;
+}
+
+.switch {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  --app-region: no-drag;
 }

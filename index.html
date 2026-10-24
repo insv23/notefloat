@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,19 +10,70 @@
     <div class="app" id="app">
       <aside class="sidebar">
         <div class="sidebar-head">
-          <span class="label">Buffers</span>
-          <button id="new-buffer" class="icon" title="新建 buffer (⌘⇧N)">＋</button>
+          <button id="toggle-sidebar" class="icon" title="Toggle Sidebar" aria-label="Toggle Sidebar">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="1.9" y="3.2" width="12.2" height="9.6" rx="1.9" />
+              <path d="M6.4 3.2v9.6" />
+            </svg>
+          </button>
+          <div class="sidebar-actions">
+            <button id="new-folder" class="icon" title="New Folder" aria-label="New Folder">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6c.4 0 .8.2 1 .5l.8 1h4.6A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z" />
+              </svg>
+            </button>
+            <button id="new-note" class="icon" title="New Note" aria-label="New Note">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 3.5v9M3.5 8h9" />
+              </svg>
+            </button>
+          </div>
         </div>
-        <ul class="buffers" id="buffers"></ul>
+        <div class="sidebar-launch">
+          <button id="open-search" class="search-launch" type="button" aria-label="Search All Notes">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="6.8" cy="6.8" r="4.2" />
+              <path d="M10 10 13.5 13.5" />
+            </svg>
+            <span class="search-launch-label">Search</span>
+            <span class="search-launch-key" id="open-search-key"></span>
+          </button>
+        </div>
+        <div class="sidebar-scroll">
+          <section class="group" id="pinned-section">
+            <h2 class="group-title">Pinned</h2>
+            <ul class="buffers" id="pinned"></ul>
+          </section>
+          <div class="sidebar-rule" role="separator"></div>
+          <ul class="folders" id="folders"></ul>
+        </div>
+        <div class="sidebar-foot">
+          <button id="open-settings" class="settings-entry" title="Settings" aria-label="Settings">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 5.5h4M9.5 5.5h4.5M2 10.5h3.5M8.5 10.5h5.5" />
+              <circle cx="8" cy="5.5" r="1.6" />
+              <circle cx="7" cy="10.5" r="1.6" />
+            </svg>
+            <span>Settings</span>
+          </button>
+        </div>
       </aside>
       <main class="main">
         <header class="titlebar">
-          <button id="toggle-sidebar" class="icon" title="显示/隐藏侧边栏 (⌘B)">☰</button>
+          <button id="show-sidebar" class="icon" title="Show Sidebar" aria-label="Show Sidebar">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="1.9" y="3.2" width="12.2" height="9.6" rx="1.9" />
+              <path d="M6.4 3.2v9.6" />
+            </svg>
+          </button>
           <input id="title" class="title" spellcheck="false" autocomplete="off" />
           <span class="status" id="status"></span>
         </header>
+        <div class="findbar" id="findbar" hidden></div>
         <div class="editor" id="editor"></div>
       </main>
+      <div id="search-dialog"></div>
+      <div id="settings"></div>
     </div>
     <script type="module" src="./src/main.ts"></script>
   </body>

@@ -4,21 +4,94 @@ import { call, event } from "mygo-runtime";
 
 // ---- Types ----
 
+/** AppInfo names the app for the settings page's About section. */
+export interface AppInfo {
+  name: string;
+  version: string;
+  dataDir: string;
+}
+
 /** Buffer is one note: a plain text file with a title. */
 export interface Buffer {
   id: string;
   title: string;
+  /**
+   * Pinned notes show up in the sidebar's Pinned section as well as in their
+   * own folder.
+   */
+  pinned?: boolean;
 }
 
 /**
- * Library is what the page needs to draw the sidebar: the buffers, which one
+ * Folder groups notes, as a project does. Its notes stay in file order here:
+ * the order of Buffers is the order the sidebar shows them in.
+ */
+export interface Folder {
+  id: string;
+  title: string;
+  buffers: Buffer[];
+}
+
+/**
+ * Library is what the page needs to draw the sidebar: the folders, which note
  * was open, and where the notes and pictures live.
  */
 export interface Library {
-  buffers: Buffer[];
+  folders: Folder[];
   active: string;
   dataDir: string;
   imagesDir: string;
+}
+
+/**
+ * SearchHit is one line of a note that matches a search: the note it belongs
+ * to, which line of the note's file matched, where in the visible text the
+ * match starts, and the lines around it, for the result list to show the
+ * match in its place. Offset counts in UTF-16 code units, the index a
+ * JavaScript string slices by, so that the page can cut the line at the match
+ * with it; a Go byte offset would land elsewhere as soon as the line holds a
+ * character that is not ASCII.
+ */
+export interface SearchHit {
+  note: string;
+  title: string;
+  line: number;
+  offset: number;
+  text: string;
+  before: string;
+  after: string;
+}
+
+/** Settings is what the user can change. It crosses to the page as it is. */
+export interface Settings {
+  openAtLogin: boolean;
+  /**
+   * NotesDir is where the notes live; empty means the default user data
+   * directory.
+   */
+  notesDir: string;
+  /** Shortcuts holds every action, the ones left at their default included. */
+  shortcuts: Record<string, string>;
+  /** Opacity of the panel, between 0.4 and 1. */
+  opacity: number;
+  /** SidebarHidden remembers the sidebar closed. */
+  sidebarHidden: boolean;
+}
+
+/**
+ * ShortcutDef is one shortcut the user can change: what it does, the keys it
+ * starts with, and whether it works in every app or only in this one.
+ */
+export interface ShortcutDef {
+  action: string;
+  label: string;
+  default: string;
+  /**
+   * Global shortcuts are registered with the system and work while another
+   * app is in front. The others are matched by the page while the panel has
+   * the keyboard.
+   */
+  global: boolean;
 }
 
 // ---- Services ----
@@ -29,15 +102,22 @@ export interface Library {
  * written note.
  */
 export const Notes = {
-  /** Activate remembers which buffer was open, so that the app opens it again. */
+  /** Activate remembers which note was open, so that the app opens it again. */
   activate(id: string): Promise<void> {
     return call("Notes.Activate", id);
   },
-  /** Create adds a buffer and returns it. */
-  create(title: string): Promise<Buffer> {
-    return call("Notes.Create", title);
+  /**
+   * Create adds a note to a folder and returns it. An empty folderID puts it in
+   * the first folder.
+   */
+  create(folderID: string, title: string): Promise<Buffer> {
+    return call("Notes.Create", folderID, title);
   },
-  /** Library returns the buffers of the app. */
+  /** CreateFolder adds a folder with one empty note in it, and returns it. */
+  createFolder(title: string): Promise<Folder> {
+    return call("Notes.CreateFolder", title);
+  },
+  /** Library returns the folders of the app. */
   library(): Promise<Library> {
     return call("Notes.Library");
   },
@@ -46,26 +126,135 @@ export const Notes = {
     return call("Notes.Load", id);
   },
   /**
-   * Remove deletes a buffer's file and forgets it. Pictures it referred to are
+   * MoveNote puts a note at index of a folder's notes. The index is the place
+   * the note takes among the notes as the caller sees them, before the move.
+   */
+  moveNote(id: string, folderID: string, index: number): Promise<void> {
+    return call("Notes.MoveNote", id, folderID, index);
+  },
+  /**
+   * Remove deletes a note's file and forgets it. Pictures it referred to are
    * left to the sweep, which waits before trashing anything, so that an undo of
    * the deletion would still find them.
    */
   remove(id: string): Promise<void> {
     return call("Notes.Remove", id);
   },
+  /**
+   * RemoveFolder asks, then trashes a folder's notes and forgets it. The last
+   * folder stays: the sidebar always has somewhere to put a note.
+   */
+  removeFolder(id: string): Promise<void> {
+    return call("Notes.RemoveFolder", id);
+  },
+  /** RenameFolder retitles a folder. */
+  renameFolder(id: string, title: string): Promise<void> {
+    return call("Notes.RenameFolder", id, title);
+  },
+  /**
+   * ReorderFolders puts the folders in the order of ids, which names every one
+   * of them.
+   */
+  reorderFolders(ids: string[]): Promise<void> {
+    return call("Notes.ReorderFolders", ids);
+  },
   /** Save writes a buffer's text and title. */
   save(id: string, title: string, text: string): Promise<void> {
     return call("Notes.Save", id, title, text);
+  },
+  /**
+   * Search returns the lines of every note that hold query, the notes in the
+   * order the sidebar shows them, and the lines in the order they are written.
+   * Case folds unless the user asked for a match that does not.
+   */
+  search(query: string, caseSensitive: boolean): Promise<SearchHit[]> {
+    return call("Notes.Search", query, caseSensitive);
+  },
+  /** SetPinned shows or hides a note in the sidebar's Pinned section. */
+  setPinned(id: string, pinned: boolean): Promise<void> {
+    return call("Notes.SetPinned", id, pinned);
+  },
+} as const;
+
+/**
+ * Preferences is the store of Settings, and applies the ones that reach past
+ * the page: the login item, the global shortcut, the panel's opacity, and the
+ * directory the notes live in.
+ */
+export const Preferences = {
+  /** About returns the app's name, version and where it keeps the notes. */
+  about(): Promise<AppInfo> {
+    return call("Preferences.About");
+  },
+  /**
+   * ChooseDataDir asks for a directory, copies the notes into it and switches
+   * the app to it. It returns the settings unchanged when the user cancels.
+   */
+  chooseDataDir(): Promise<Settings> {
+    return call("Preferences.ChooseDataDir");
+  },
+  /** Get returns the settings in force. */
+  get(): Promise<Settings> {
+    return call("Preferences.Get");
+  },
+  /** ResetShortcut puts one shortcut back to its default. */
+  resetShortcut(action: string): Promise<void> {
+    return call("Preferences.ResetShortcut", action);
+  },
+  /** ResetShortcuts puts every shortcut back to its default. */
+  resetShortcuts(): Promise<void> {
+    return call("Preferences.ResetShortcuts");
+  },
+  /** RevealDataDir shows the notes in the Finder. */
+  revealDataDir(): Promise<void> {
+    return call("Preferences.RevealDataDir");
+  },
+  /** SetOpacity sets how see-through the panel is, and remembers it. */
+  setOpacity(opacity: number): Promise<void> {
+    return call("Preferences.SetOpacity", opacity);
+  },
+  /** SetOpenAtLogin starts the app at login, or stops it from doing so. */
+  setOpenAtLogin(open: boolean): Promise<void> {
+    return call("Preferences.SetOpenAtLogin", open);
+  },
+  /**
+   * SetRecording lets go of the global shortcut while the settings wait for the
+   * key that is to become it, so that the key it holds reaches the page instead
+   * of the system hiding the panel the user is typing in.
+   */
+  setRecording(recording: boolean): Promise<void> {
+    return call("Preferences.SetRecording", recording);
+  },
+  /**
+   * SetShortcut binds action to accel. A global shortcut is registered before it
+   * is saved: when the system refuses it, the old one stays.
+   */
+  setShortcut(action: string, accel: string): Promise<void> {
+    return call("Preferences.SetShortcut", action, accel);
+  },
+  /**
+   * SetSidebarHidden remembers the sidebar closed, so that the panel opens the
+   * same way it was left.
+   */
+  setSidebarHidden(hidden: boolean): Promise<void> {
+    return call("Preferences.SetSidebarHidden", hidden);
+  },
+  /** Shortcuts lists the actions the settings page shows, defaults included. */
+  shortcuts(): Promise<ShortcutDef[]> {
+    return call("Preferences.Shortcuts");
   },
 } as const;
 
 /** Images stores the pictures pasted into a note. */
 export const Images = {
   /**
-   * Save writes a pasted picture and returns its path, which the note then holds
-   * as plain text. The name is the SHA-256 of the bytes, so pasting the same
-   * picture twice reuses one file, and a note dropping its reference cannot pull
-   * a file another note still points at.
+   * Save writes a pasted picture and returns its path relative to the data
+   * directory, images/<sha>.<ext>, which the note then holds as plain text: the
+   * note keeps finding its pictures after the whole directory moves. The pasted
+   * bytes name the file, so pasting one picture twice stores it once.
+   * The name is the SHA-256 of the bytes, so pasting the same picture twice
+   * reuses one file, and a note dropping its reference cannot pull a file
+   * another note still points at.
    */
   save(data: string): Promise<string> {
     return call("Images.Save", data);
@@ -83,4 +272,15 @@ export const events = {
    * hidden.
    */
   panelShown: event<boolean>("panelShown"),
+  /**
+   * PanelHidden tells the page the panel just went away, so that it writes the
+   * note before the user can quit: the page saves a keystroke 400ms after the
+   * last one, and an app that quits within that window would lose them.
+   */
+  panelHidden: event<boolean>("panelHidden"),
+  /**
+   * OpenSettings tells the page to show its settings, after the tray's Settings
+   * item showed the panel.
+   */
+  openSettings: event<boolean>("openSettings"),
 } as const;

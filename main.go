@@ -6,18 +6,26 @@ import (
 	"image/color"
 	"image/png"
 	"log"
+	"math"
+	"sync"
 
 	"github.com/egoist/mygo"
 )
-
-// toggleShortcut summons and dismisses the panel from any app.
-const toggleShortcut = "Alt+V"
 
 // PanelShown tells the page the panel just appeared, so that it can put the
 // caret back in the block the user was editing: the panel takes the keyboard
 // without activating the app, and the page's own focus does not survive being
 // hidden.
 var PanelShown = mygo.NewEvent[bool]("panelShown")
+
+// PanelHidden tells the page the panel just went away, so that it writes the
+// note before the user can quit: the page saves a keystroke 400ms after the
+// last one, and an app that quits within that window would lose them.
+var PanelHidden = mygo.NewEvent[bool]("panelHidden")
+
+// OpenSettings tells the page to show its settings, after the tray's Settings
+// item showed the panel.
+var OpenSettings = mygo.NewEvent[bool]("openSettings")
 
 func main() {
 	mygo.App.SetName("Notefloat")
@@ -29,18 +37,32 @@ func main() {
 
 	// The notes and the pictures, and the scheme the page loads them with.
 	// Schemes are registered per window, so this comes before the panel.
-	mygo.Bind(&Notes{})
+	notes := &Notes{}
+	prefs := newPreferences(notes)
+	if err := prefs.startup(); err != nil {
+		log.Printf("reading the settings: %v", err)
+	}
+	// The notes live where the user put them, which is known before the first
+	// note is read.
+	mygo.App.SetPath(mygo.PathUserData, prefs.notesDir())
+	mygo.Bind(notes)
+	mygo.Bind(prefs)
 	mygo.Bind(&Images{})
 	serveImages()
 
 	mygo.App.WhenReady(func() {
 		panel := newPanel()
+		prefs.useWindow(panel)
+		prefs.apply()
 		startImageSweep()
 		toggle := toggler(panel)
-		if err := mygo.GlobalShortcut.Register(toggleShortcut, toggle); err != nil {
-			log.Printf("registering %s: %v", toggleShortcut, err)
+
+		shortcut := &globalShortcut{toggle: toggle}
+		if err := shortcut.set(prefs.accel(actionTogglePanel)); err != nil {
+			log.Printf("registering the panel shortcut: %v", err)
 		}
-		addTray(toggle)
+		shortcut.tray = addTray(panel, shortcut)
+		prefs.useGlobal(shortcut.set)
 	})
 
 	if err := mygo.App.Run(); err != nil {
@@ -54,6 +76,10 @@ func newPanel() *mygo.Window {
 	panel := mygo.NewWindow(mygo.WindowOptions{
 		Title:       "Notefloat",
 		Panel:       true, // never activates the app, floats over every Space
+		// Floating from the start: the panel never activates the app, so a
+		// window at the normal level would sit behind the windows of the app
+		// the user is in, and Show would look like nothing happened.
+		AlwaysOnTop: true,
 		Frameless:   true,
 		Hidden:      true,
 		Transparent: true,
@@ -72,88 +98,196 @@ func newPanel() *mygo.Window {
 	// Escape, Cmd-W and the close button hide the panel.
 	panel.OnClose(func(e *mygo.CloseEvent) {
 		e.PreventDefault()
-		panel.Hide()
+		hide(panel)
 	})
 	return panel
 }
 
+// hide hides the panel, after telling the page: the page writes the note it
+// holds while it can still hear from the app.
+func hide(panel *mygo.Window) {
+	if err := PanelHidden.Emit(panel, true); err != nil {
+		log.Print(err)
+	}
+	panel.Hide()
+}
+
+// show reveals the panel over the app the user is in, and puts it near the
+// pointer the first time it appears in this run, as Spotlight does.
+var placement struct {
+	sync.Mutex
+	placed bool
+}
+
+func show(panel *mygo.Window) {
+	placement.Lock()
+	first := !placement.placed
+	placement.placed = true
+	placement.Unlock()
+	if first {
+		d := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
+		width, height := panel.Size()
+		panel.SetPosition(
+			d.WorkArea.X+(d.WorkArea.Width-width)/2,
+			d.WorkArea.Y+(d.WorkArea.Height-height)/3,
+		)
+	}
+	// Showing the panel, never the app: the app stays inactive, the panel
+	// takes the keyboard as its key window, and hiding it hands the
+	// keyboard back to the app the user was in. Hiding and unhiding the
+	// app itself is a process-level request to the window server that
+	// lands a run loop later, which loses the window ordering made in the
+	// same key press: the panel then shows on the second press.
+	panel.Show()
+	if err := PanelShown.Emit(panel, true); err != nil {
+		log.Print(err)
+	}
+}
+
 // toggler returns the shortcut's action: hide the panel if it shows, and
-// otherwise show it, on the display with the pointer the first time it
-// appears in this run, as Spotlight does. The panel never activates the app,
-// so hiding it from another app leaves that app with the keyboard.
+// otherwise show it. The panel never activates the app, so hiding it from
+// another app leaves that app with the keyboard.
 func toggler(panel *mygo.Window) func() {
-	placed := false
 	return func() {
 		if panel.IsVisible() {
-			panel.Hide()
-			// Hiding the panel alone leaves an active app with no windows,
-			// which swallows what the user types next; hiding the app hands
-			// the keyboard back to the app they came from.
-			mygo.App.Hide()
+			hide(panel)
 			return
 		}
-		if !placed {
-			d := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
-			width, height := panel.Size()
-			panel.SetPosition(
-				d.WorkArea.X+(d.WorkArea.Width-width)/2,
-				d.WorkArea.Y+(d.WorkArea.Height-height)/3,
-			)
-			placed = true
+		show(panel)
+	}
+}
+
+// globalShortcut keeps the one shortcut the system registers, so that changing
+// it in the settings leaves the app with a working shortcut or with the one it
+// had.
+type globalShortcut struct {
+	mu      sync.Mutex
+	current string
+	toggle  func()
+	panel   *mygo.Window
+	tray    *mygo.Tray
+}
+
+// set registers accel in place of the shortcut registered now. An empty accel
+// leaves the system holding nothing, which is how the settings wait for the key
+// that is to become the shortcut: the system takes the key it holds before the
+// page sees it.
+func (g *globalShortcut) set(accel string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.current == accel {
+		return nil
+	}
+	mygo.GlobalShortcut.Unregister(g.current)
+	if accel == "" {
+		g.current = ""
+		return nil
+	}
+	if err := mygo.GlobalShortcut.Register(accel, g.toggle); err != nil {
+		if g.current != "" {
+			if err := mygo.GlobalShortcut.Register(g.current, g.toggle); err != nil {
+				log.Printf("putting the shortcut %s back: %v", g.current, err)
+			}
 		}
-		mygo.App.Show()
-		panel.Show()
-		// Activating the app is what makes the system come back to it when a
-		// floating window of another app, a clipboard manager's for instance,
-		// closes: a panel that never activates its app hands the keyboard back
-		// to the app that was active all along.
-		mygo.App.Focus()
-		if err := PanelShown.Emit(panel, true); err != nil {
-			log.Print(err)
-		}
+		return err
+	}
+	g.current = accel
+	if g.tray != nil {
+		g.tray.SetMenu(trayMenu(g.panel, g.toggle, accel))
+		g.tray.SetToolTip("Notefloat — " + accel)
+	}
+	return nil
+}
+
+// openSettings shows the panel with its settings page.
+func openSettings(panel *mygo.Window) {
+	show(panel)
+	if err := OpenSettings.Emit(panel, true); err != nil {
+		log.Print(err)
 	}
 }
 
 // addTray puts the app in the menu bar: with no Dock icon, the tray menu is
-// how the user summons the panel and quits the app.
-func addTray(toggle func()) {
-	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{
-			Label:       "显示 Notefloat",
-			Accelerator: toggleShortcut,
-			Click:       func(*mygo.MenuItem, *mygo.Window) { toggle() },
-		},
-		mygo.Separator(),
-		{Label: "退出 Notefloat", Role: mygo.RoleQuit},
-	})
+// how the user summons the panel, opens the settings and quits the app.
+func addTray(panel *mygo.Window, shortcut *globalShortcut) *mygo.Tray {
+	shortcut.mu.Lock()
+	toggle := shortcut.toggle
+	accel := shortcut.current
+	shortcut.mu.Unlock()
 	tray, err := mygo.NewTray(mygo.TrayOptions{
 		ID:             "notefloat",
 		Icon:           trayIcon(),
 		IconIsTemplate: true,
-		ToolTip:        "Notefloat — " + toggleShortcut,
-		Menu:           menu,
+		ToolTip:        "Notefloat — " + accel,
+		Menu:           trayMenu(panel, toggle, accel),
 	})
 	if err != nil {
 		log.Printf("adding the tray icon: %v", err)
-		return
+		return nil
 	}
-	_ = tray
+	return tray
 }
 
-// trayIcon draws the menu bar icon, three bars of a note, as a template
-// image: macOS tints it for light and dark menu bars.
+func trayMenu(panel *mygo.Window, toggle func(), accel string) *mygo.Menu {
+	return mygo.NewMenu([]*mygo.MenuItem{
+		{
+			Label:       "Show/Hide Notefloat",
+			Accelerator: accel,
+			Click:       func(*mygo.MenuItem, *mygo.Window) { toggle() },
+		},
+		{
+			Label: "Settings…",
+			Click: func(*mygo.MenuItem, *mygo.Window) { openSettings(panel) },
+		},
+		mygo.Separator(),
+		{Label: "Quit Notefloat", Role: mygo.RoleQuit},
+	})
+}
+
+// trayIcon draws the menu bar icon: the panel icon's node graph, on the 32px
+// grid the menu bar hands a template image. macOS tints a template for light
+// and dark menu bars, so the ink is black and only the alpha carries the shape.
 func trayIcon() []byte {
-	const size = 32
+	const (
+		size    = 32
+		samples = 4 // per axis; the graph has no straight pixel edges to rely on
+		pitch   = 10.0
+		dot     = 3.4
+		bar     = 2.6
+	)
+	center := float64(size) / 2
+	cols := [3]float64{center - pitch, center, center + pitch}
+	rows := [3]float64{center - pitch, center, center + pitch}
+	// The same six dots and five bars as the app icon: three across the top,
+	// one below the middle of them, one to its right, one below that.
+	dots := [][2]float64{
+		{cols[0], rows[0]}, {cols[1], rows[0]}, {cols[2], rows[0]},
+		{cols[1], rows[1]}, {cols[2], rows[1]},
+		{cols[1], rows[2]},
+	}
+	bars := [][4]float64{
+		{cols[0], rows[0], cols[1], rows[0]},
+		{cols[1], rows[0], cols[2], rows[0]},
+		{cols[1], rows[0], cols[1], rows[1]},
+		{cols[1], rows[1], cols[2], rows[1]},
+		{cols[1], rows[1], cols[1], rows[2]},
+	}
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	ink := color.RGBA{A: 0xff}
-	for i, top := range []int{7, 14, 21} {
-		width := size - 10
-		if i == 2 {
-			width -= 8
-		}
-		for y := top; y < top+3; y++ {
-			for x := 5; x < 5+width; x++ {
-				img.Set(x, y, ink)
+	for y := range size {
+		for x := range size {
+			covered := 0
+			for sy := 0; sy < samples; sy++ {
+				for sx := 0; sx < samples; sx++ {
+					px := float64(x) + (float64(sx)+0.5)/samples
+					py := float64(y) + (float64(sy)+0.5)/samples
+					if graphInk(px, py, dots, bars, dot, bar) {
+						covered++
+					}
+				}
+			}
+			if covered > 0 {
+				a := uint8(255 * covered / (samples * samples))
+				img.Set(x, y, color.RGBA{A: a})
 			}
 		}
 	}
@@ -163,4 +297,25 @@ func trayIcon() []byte {
 		return nil
 	}
 	return buf.Bytes()
+}
+
+// graphInk reports whether a point falls inside one of the dots or one of the
+// bars. The bars are axis aligned and drawn from centre to centre, so each one
+// spans its two centres grown by half the bar thickness.
+func graphInk(x, y float64, dots [][2]float64, bars [][4]float64, dot, bar float64) bool {
+	for _, d := range dots {
+		dx, dy := x-d[0], y-d[1]
+		if dx*dx+dy*dy <= dot*dot {
+			return true
+		}
+	}
+	half := bar / 2
+	for _, b := range bars {
+		left, right := math.Min(b[0], b[2])-half, math.Max(b[0], b[2])+half
+		top, bottom := math.Min(b[1], b[3])-half, math.Max(b[1], b[3])+half
+		if x >= left && x <= right && y >= top && y <= bottom {
+			return true
+		}
+	}
+	return false
 }

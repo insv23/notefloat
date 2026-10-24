@@ -20,7 +20,7 @@ const imageGrace = 7 * 24 * time.Hour
 
 // imageRef matches the paths Images.Save writes into a note, relative to the
 // app's data directory.
-var imageRef = regexp.MustCompile(`images/[0-9]{4}-[0-9]{2}/[0-9a-f]{64}\.(?:png|jpg|gif|webp|heic)`)
+var imageRef = regexp.MustCompile(`images/[0-9a-f]{64}\.(?:png|jpg|gif|webp|heic)`)
 
 // sweepImages moves the pictures no note refers to and that have not been
 // referred to for grace to the trash. The modification time of a picture is
