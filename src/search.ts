@@ -4,7 +4,7 @@
 // every note: it lists the matching lines with a line of context on either
 // side, and opening one puts the caret on the word. Both match plain text,
 // case-sensitively when Aa is on.
-import type { NoteEditor } from "./editor";
+import type { NoteEditor } from "./editor/index";
 import { Notes, type SearchHit } from "./mygo";
 import { formatAccel } from "./shortcuts";
 

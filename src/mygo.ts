@@ -44,13 +44,13 @@ export interface Library {
 }
 
 /**
- * SearchHit is one line of a note that matches a search: the note it belongs
- * to, which line of the note's file matched, where in the visible text the
- * match starts, and the lines around it, for the result list to show the
- * match in its place. Offset counts in UTF-16 code units, the index a
- * JavaScript string slices by, so that the page can cut the line at the match
- * with it; a Go byte offset would land elsewhere as soon as the line holds a
- * character that is not ASCII.
+ * SearchHit is one line of a note that matches a search: the note it belongs to,
+ * which line of the note's file matched, where in the visible text the match
+ * starts, and the lines around it, for the result list to show the match in its
+ * place. Offset counts in UTF-16 code units, the index a JavaScript string
+ * slices by, so that the page can cut the line at the match with it; a Go byte
+ * offset would land elsewhere as soon as the line holds a character that is not
+ * ASCII.
  */
 export interface SearchHit {
   note: string;
@@ -66,7 +66,7 @@ export interface SearchHit {
 export interface Settings {
   openAtLogin: boolean;
   /**
-   * NotesDir is where the notes live; empty means the default user data
+   * notesDir is where the notes live; empty means the default user data
    * directory.
    */
   notesDir: string;
@@ -97,9 +97,9 @@ export interface ShortcutDef {
 // ---- Services ----
 
 /**
- * Notes is the store the page calls. Every write is atomic: the file is
- * written beside its destination and renamed, so a crash never leaves a half
- * written note.
+ * Notes is the store the page calls. Every write is atomic: the file is written
+ * beside its destination and renamed, so a crash never leaves a half written
+ * note.
  */
 export const Notes = {
   /** Activate remembers which note was open, so that the app opens it again. */
@@ -117,6 +117,13 @@ export const Notes = {
   createFolder(title: string): Promise<Folder> {
     return call("Notes.CreateFolder", title);
   },
+  /**
+   * DoneBlocks reads which blocks of a note the user finished: one flag per
+   * block, in the note's order.
+   */
+  doneBlocks(id: string): Promise<boolean[]> {
+    return call("Notes.DoneBlocks", id);
+  },
   /** Library returns the folders of the app. */
   library(): Promise<Library> {
     return call("Notes.Library");
@@ -126,16 +133,23 @@ export const Notes = {
     return call("Notes.Load", id);
   },
   /**
-   * MoveNote puts a note at index of a folder's notes. The index is the place
-   * the note takes among the notes as the caller sees them, before the move.
+   * MoveNote puts a note at index of a folder's notes. The index is the place the
+   * note takes among the notes as the caller sees them, before the move.
    */
   moveNote(id: string, folderID: string, index: number): Promise<void> {
     return call("Notes.MoveNote", id, folderID, index);
   },
   /**
-   * Remove deletes a note's file and forgets it. Pictures it referred to are
-   * left to the sweep, which waits before trashing anything, so that an undo of
-   * the deletion would still find them.
+   * Position reads where the caret stood in a note the last time it was written,
+   * as an offset into its text.
+   */
+  position(id: string): Promise<number> {
+    return call("Notes.Position", id);
+  },
+  /**
+   * Remove deletes a note's file and forgets it. Pictures it referred to are left
+   * to the sweep, which waits before trashing anything, so that an undo of the
+   * deletion would still find them.
    */
   remove(id: string): Promise<void> {
     return call("Notes.Remove", id);
@@ -152,15 +166,26 @@ export const Notes = {
     return call("Notes.RenameFolder", id, title);
   },
   /**
-   * ReorderFolders puts the folders in the order of ids, which names every one
-   * of them.
+   * ReorderFolders puts the folders in the order of ids, which names every one of
+   * them.
    */
   reorderFolders(ids: string[]): Promise<void> {
     return call("Notes.ReorderFolders", ids);
   },
-  /** Save writes a buffer's text and title. */
-  save(id: string, title: string, text: string): Promise<void> {
-    return call("Notes.Save", id, title, text);
+  /**
+   * Reset forgets the library read from disk, so that the next call reads it from
+   * whichever directory the app points at then.
+   */
+  reset(): Promise<void> {
+    return call("Notes.Reset");
+  },
+  /**
+   * Save writes a buffer's text and title, and where the caret stood when it was
+   * written, so that opening the note again puts the user back where they left
+   * it.
+   */
+  save(id: string, title: string, text: string, at: number): Promise<void> {
+    return call("Notes.Save", id, title, text, at);
   },
   /**
    * Search returns the lines of every note that hold query, the notes in the
@@ -170,6 +195,14 @@ export const Notes = {
   search(query: string, caseSensitive: boolean): Promise<SearchHit[]> {
     return call("Notes.Search", query, caseSensitive);
   },
+  /**
+   * SetDoneBlocks remembers which blocks of a note the user finished. A note with
+   * no finished block is forgotten, so that the file does not grow one entry per
+   * note.
+   */
+  setDoneBlocks(id: string, done: boolean[]): Promise<void> {
+    return call("Notes.SetDoneBlocks", id, done);
+  },
   /** SetPinned shows or hides a note in the sidebar's Pinned section. */
   setPinned(id: string, pinned: boolean): Promise<void> {
     return call("Notes.SetPinned", id, pinned);
@@ -177,8 +210,8 @@ export const Notes = {
 } as const;
 
 /**
- * Preferences is the store of Settings, and applies the ones that reach past
- * the page: the login item, the global shortcut, the panel's opacity, and the
+ * Preferences is the store of Settings, and applies the ones that reach past the
+ * page: the login item, the global shortcut, the panel's opacity, and the
  * directory the notes live in.
  */
 export const Preferences = {
@@ -187,8 +220,8 @@ export const Preferences = {
     return call("Preferences.About");
   },
   /**
-   * ChooseDataDir asks for a directory, copies the notes into it and switches
-   * the app to it. It returns the settings unchanged when the user cancels.
+   * ChooseDataDir asks for a directory, copies the notes into it and switches the
+   * app to it. It returns the settings unchanged when the user cancels.
    */
   chooseDataDir(): Promise<Settings> {
     return call("Preferences.ChooseDataDir");
@@ -219,8 +252,8 @@ export const Preferences = {
   },
   /**
    * SetRecording lets go of the global shortcut while the settings wait for the
-   * key that is to become it, so that the key it holds reaches the page instead
-   * of the system hiding the panel the user is typing in.
+   * key that is to become it, so that the key it holds reaches the page instead of
+   * the system hiding the panel the user is typing in.
    */
   setRecording(recording: boolean): Promise<void> {
     return call("Preferences.SetRecording", recording);
@@ -233,8 +266,8 @@ export const Preferences = {
     return call("Preferences.SetShortcut", action, accel);
   },
   /**
-   * SetSidebarHidden remembers the sidebar closed, so that the panel opens the
-   * same way it was left.
+   * SetSidebarHidden remembers the sidebar closed, so that the panel opens the same
+   * way it was left.
    */
   setSidebarHidden(hidden: boolean): Promise<void> {
     return call("Preferences.SetSidebarHidden", hidden);
@@ -251,10 +284,8 @@ export const Images = {
    * Save writes a pasted picture and returns its path relative to the data
    * directory, images/<sha>.<ext>, which the note then holds as plain text: the
    * note keeps finding its pictures after the whole directory moves. The pasted
-   * bytes name the file, so pasting one picture twice stores it once.
-   * The name is the SHA-256 of the bytes, so pasting the same picture twice
-   * reuses one file, and a note dropping its reference cannot pull a file
-   * another note still points at.
+   * bytes name the file, so pasting one picture twice stores it once, and a note
+   * dropping its reference cannot pull a file another note still points at.
    */
   save(data: string): Promise<string> {
     return call("Images.Save", data);

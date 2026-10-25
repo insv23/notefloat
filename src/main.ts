@@ -1,13 +1,15 @@
-// The app shell: the sidebar of folders and notes, the title, and the
-// shortcuts around the editor in src/editor.ts. Notes and pictures live in
-// files (see store.go), so nothing here keeps the text: it asks Go for it and
-// hands back every change. What the keys do comes from the settings, which the
-// settings overlay writes.
-import { Images, Notes, Preferences, events, type Buffer, type Library, type SearchHit, type Settings } from "./mygo";
-import { createEditor, type NoteEditor } from "./editor";
+// The app shell: the sidebar of folders and notes, the title, the shortcuts
+// around the editor, and the panels laid over them. The notes and their folders
+// live behind ./library.ts, the debounced write behind ./save.ts, the key map
+// behind ./bindings.ts, and the editor itself in ./editor.ts.
+import { Images, Notes, Preferences, events, type SearchHit, type Settings } from "./mygo";
+import { createBindings } from "./bindings";
+import { createEditor, type NoteEditor } from "./editor/index";
 import { imeBusy, watchComposition } from "./ime";
+import { createLibrary } from "./library";
+import { createSaver } from "./save";
 import { createFindBar, createNoteSearch, type FindBar, type NoteSearch } from "./search";
-import { accelFromEvent, canonical, formatAccel } from "./shortcuts";
+import { formatAccel } from "./shortcuts";
 import { createSettings, type SettingsUI } from "./settings";
 import { renderSidebar } from "./sidebar";
 
@@ -30,85 +32,27 @@ const searchDialogHost = $("#search-dialog");
 const openSearchButton = $("#open-search");
 const openSearchKey = $("#open-search-key");
 
-let library: Library;
+const library = createLibrary();
+const bindings = createBindings();
+
 let settings: Settings;
 let settingsUI: SettingsUI;
 let activeId = "";
 let view: NoteEditor | null = null;
 let findBar: FindBar;
 let noteSearch: NoteSearch;
-let saveTimer = 0;
-/** binds maps an accelerator to the action it runs, global ones aside: the
- * system already registers those. */
-let binds = new Map<string, string>();
 
-function findNote(id: string): { folderIndex: number; buffer: Buffer } | null {
-  for (let folderIndex = 0; folderIndex < library.folders.length; folderIndex++) {
-    const buffer = library.folders[folderIndex]!.buffers.find((note) => note.id === id);
-    if (buffer) return { folderIndex, buffer };
-  }
-  return null;
-}
+const activeNote = () => library.active();
 
-const activeNote = () => findNote(activeId)?.buffer;
-
-const titleOf = (id: string) => findNote(id)?.buffer.title ?? "Untitled";
-
-function folderOfActive(): string {
-  const found = findNote(activeId);
-  return found ? library.folders[found.folderIndex]!.id : (library.folders[0]?.id ?? "");
-}
-
-function scheduleSave() {
-  window.clearTimeout(saveTimer);
-  saveTimer = window.setTimeout(() => void flush(), 400);
-}
-
-async function flush() {
-  window.clearTimeout(saveTimer);
+/** save writes the note on screen: the text the editor holds and the title. */
+const save = createSaver(async () => {
   if (!view || !activeId) return;
-  await Notes.save(activeId, titleEl.value, view.text());
-}
-
-async function openNote(id: string) {
-  await flush();
-  const text = await Notes.load(id);
-  activeId = id;
-  await Notes.activate(id);
-  titleEl.value = titleOf(id);
-  view?.destroy();
-  editorHost.replaceChildren();
-  view = createEditor(editorHost, {
-    doc: text,
-    imagesDir: library.imagesDir,
-    binding: (action) => settings.shortcuts[action] ?? "",
-    onChange: scheduleSave,
-    onImage: saveImage,
-    onStatus: flash,
-  });
-  renderSidebarNow();
-  renderChrome();
-  findBar?.noteChanged();
-  if (!settingsUI.isOpen()) view.focus();
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let at = 0; at < bytes.length; at += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(at, at + chunk));
-  }
-  return btoa(binary);
-}
-
-/** saveImage writes a pasted picture beside the notes and returns its path. */
-async function saveImage(file: File): Promise<string | null> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  return Images.save(toBase64(bytes));
-}
+  // The caret goes with the text: the note opens again where it was left.
+  await Notes.save(activeId, titleEl.value, view.text(), view.position());
+});
 
 function renderSidebarNow() {
-  renderSidebar({ pinned: pinnedEl, folders: foldersEl }, library, activeId, {
+  renderSidebar({ pinned: pinnedEl, folders: foldersEl }, library.state(), activeId, {
     openNote: (id) => void openNote(id),
     newNote: (folderID) => void addNote(folderID),
     newFolder: () => void addFolder(),
@@ -135,6 +79,19 @@ function renderChrome() {
 
 const keyOf = (action: string) => formatAccel(settings.shortcuts[action] ?? "");
 
+/** report puts a failure of the page on the title bar, where it can be read. It
+ * is a diagnostic for the panel's own error handling, not a feature. */
+function report(text: string) {
+  const short = text.slice(0, 160);
+  statusEl.textContent = short;
+  window.setTimeout(() => {
+    if (statusEl.textContent === short) statusEl.textContent = "";
+  }, 8000);
+}
+
+window.addEventListener("error", (event) => report(`JS: ${event.message}`));
+window.addEventListener("unhandledrejection", (event) => report(`JS: ${String(event.reason)}`));
+
 function flash(text: string) {
   statusEl.textContent = text;
   window.setTimeout(() => {
@@ -155,79 +112,112 @@ function toggleSidebar() {
   if (settings.sidebarHidden) view?.focus();
 }
 
-async function reloadLibrary() {
-  library = await Notes.library();
-  renderSidebarNow();
+function applySettings(next: Settings) {
+  settings = next;
+  bindings.set(settings);
+  applySidebar();
   renderChrome();
 }
 
-async function addNote(folderID = folderOfActive()) {
-  await flush();
-  await Notes.create(folderID, "Untitled");
-  library = await Notes.library();
+async function openNote(id: string) {
+  await save.flush();
+  const [text, done, at] = await Promise.all([Notes.load(id), Notes.doneBlocks(id), Notes.position(id)]);
+  activeId = id;
+  await Notes.activate(id);
+  titleEl.value = library.titleOf(id);
+  view?.destroy();
+  view = createEditor(editorHost, {
+    doc: text,
+    at,
+    done,
+    imagesDir: library.state().imagesDir,
+    binding: (action) => settings.shortcuts[action] ?? "",
+    onChange: save.schedule,
+    // The finished blocks sit beside the note in library.json, and are written
+    // as the key is pressed: they are one flag, not a page of text.
+    onDone: (flags) => void Notes.setDoneBlocks(id, flags).catch(() => {}),
+    onImage: saveImage,
+    onStatus: flash,
+  });
   renderSidebarNow();
-  await openNote(library.active);
+  renderChrome();
+  findBar.noteChanged();
+  if (!settingsUI.isOpen()) view.focus();
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let at = 0; at < bytes.length; at += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + chunk));
+  }
+  return btoa(binary);
+}
+
+/** saveImage writes a pasted picture beside the notes and returns its path. */
+async function saveImage(file: File): Promise<string | null> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  return Images.save(toBase64(bytes));
+}
+
+async function addNote(folderID = library.folderOfActive()) {
+  await save.flush();
+  const note = await library.mutate(() => Notes.create(folderID, "Untitled"));
+  await openNote(note.id);
 }
 
 async function addFolder() {
-  await flush();
-  await Notes.createFolder("New Folder");
-  library = await Notes.library();
-  renderSidebarNow();
-  await openNote(library.active);
+  await save.flush();
+  const folder = await library.mutate(() => Notes.createFolder("New Folder"));
+  await openNote(folder.buffers[0]?.id ?? library.state().active);
 }
 
 async function deleteNote(id: string) {
-  await flush();
-  if (id === activeId) view = null;
-  await Notes.remove(id);
-  library = await Notes.library();
-  renderSidebarNow();
-  if (library.active !== activeId) await openNote(library.active);
+  await save.flush();
+  // The note is going: an editor left in place would write its file back.
+  if (id === activeId) {
+    view?.destroy();
+    view = null;
+  }
+  await library.mutate(() => Notes.remove(id));
+  if (library.state().active !== activeId) await openNote(library.state().active);
 }
 
 async function deleteFolder(id: string) {
-  await flush();
+  await save.flush();
   try {
-    await Notes.removeFolder(id);
+    await library.mutate(() => Notes.removeFolder(id));
   } catch (err) {
     // The dialog canceled, or the last folder is kept.
     if (err instanceof Error && err.message) flash(err.message);
     return;
   }
-  library = await Notes.library();
-  renderSidebarNow();
-  if (!findNote(activeId)) {
-    // The note being edited went to the Trash with the folder: saving it on
-    // the way to the next one would write its file back.
-    view?.destroy();
-    view = null;
-    await openNote(library.active);
-  }
+  if (library.find(activeId)) return;
+  // The note being edited went to the Trash with the folder: saving it on the
+  // way to the next one would write its file back.
+  view?.destroy();
+  view = null;
+  await openNote(library.state().active);
 }
 
 async function renameFolder(id: string, title: string) {
-  await Notes.renameFolder(id, title);
-  await reloadLibrary();
+  await library.mutate(() => Notes.renameFolder(id, title));
 }
 
 async function moveNote(id: string, folderID: string, index: number) {
-  await flush();
-  await Notes.moveNote(id, folderID, index);
-  await reloadLibrary();
+  await save.flush();
+  await library.mutate(() => Notes.moveNote(id, folderID, index));
 }
 
 async function reorderFolders(ids: string[]) {
-  await Notes.reorderFolders(ids);
-  await reloadLibrary();
+  await library.mutate(() => Notes.reorderFolders(ids));
 }
 
 async function togglePin(id: string) {
-  const note = findNote(id)?.buffer;
+  const note = library.find(id)?.buffer;
   if (!note) return;
   const pinned = !note.pinned;
-  await Notes.setPinned(id, pinned);
-  await reloadLibrary();
+  await library.mutate(() => Notes.setPinned(id, pinned));
   flash(pinned ? "Pinned" : "Unpinned");
 }
 
@@ -235,17 +225,6 @@ function openSettings() {
   // The editor would keep taking keystrokes under the overlay.
   (document.activeElement as HTMLElement | null)?.blur();
   void settingsUI.open();
-}
-
-function bindShortcuts() {
-  binds = new Map();
-  for (const [action, accel] of Object.entries(settings.shortcuts)) {
-    // The panel's own shortcut belongs to the system, and the block's move
-    // shortcuts belong to the editor, which reads them itself: matching them
-    // here too would run the action twice.
-    if (action === "togglePanel" || action === "moveBlockUp" || action === "moveBlockDown") continue;
-    binds.set(canonical(accel), action);
-  }
 }
 
 function runAction(action: string) {
@@ -284,10 +263,10 @@ async function openHit(hit: SearchHit, query: string, caseSensitive: boolean) {
   // The dialog goes away so that the note it opens is in view; the query stays
   // in its field for the next time it opens.
   noteSearch.close();
-  if (!findNote(hit.note)) {
+  if (!library.find(hit.note)) {
     // The note went away since the search read the files.
-    await reloadLibrary();
-    if (!findNote(hit.note)) return;
+    await library.reload();
+    if (!library.find(hit.note)) return;
   }
   await openNote(hit.note);
   view?.reveal(hit.line, query, { caseSensitive });
@@ -297,7 +276,7 @@ titleEl.addEventListener("input", () => {
   const note = activeNote();
   if (note) note.title = titleEl.value;
   renderSidebarNow();
-  scheduleSave();
+  save.schedule();
 });
 
 titleEl.addEventListener("keydown", (event) => {
@@ -312,9 +291,7 @@ titleEl.addEventListener("keydown", (event) => {
 
 document.addEventListener("keydown", (event) => {
   if (settingsUI?.isOpen()) return;
-  const accel = accelFromEvent(event);
-  if (!accel) return;
-  const action = binds.get(accel);
+  const action = bindings.actionOf(event);
   if (!action) return;
   // The search dialog holds the keyboard: the only key it passes on is the one
   // that searches, which brings it back to the field.
@@ -336,23 +313,19 @@ events.panelShown.on(() => {
   if (!settingsUI.isOpen()) view?.focus();
 });
 
-// Hiding writes the note at once, instead of waiting out the 400ms the
-// debounce would: the user can hide the panel and quit right after.
-events.panelHidden.on(() => void flush());
+// Hiding writes the note at once, instead of waiting out the debounce would:
+// the user can hide the panel and quit right after.
+events.panelHidden.on(() => void save.flush());
 
 // The tray's Settings item shows the panel and then asks for this.
 events.openSettings.on(() => openSettings());
 
 async function boot() {
   watchComposition();
-  [library, settings] = await Promise.all([Notes.library(), Preferences.get()]);
+  const [, stored] = await Promise.all([library.load(), Preferences.get()]);
+  settings = stored;
   settingsUI = createSettings(settingsHost, {
-    onSettings(next) {
-      settings = next;
-      bindShortcuts();
-      applySidebar();
-      renderChrome();
-    },
+    onSettings: applySettings,
     onDataDirChanged() {
       window.location.reload();
     },
@@ -360,21 +333,25 @@ async function boot() {
       view?.focus();
     },
   });
-  bindShortcuts();
+  bindings.set(settings);
   findBar = createFindBar(findbarHost, {
     editor: () => view,
     binding: (action) => settings.shortcuts[action] ?? "",
   });
   noteSearch = createNoteSearch(searchDialogHost, {
-    beforeSearch: flush,
+    beforeSearch: save.flush,
     openHit: (hit, query, caseSensitive) => void openHit(hit, query, caseSensitive),
     refocus: () => view?.focus(),
     binding: (action) => settings.shortcuts[action] ?? "",
   });
+  library.subscribe(() => {
+    renderSidebarNow();
+    renderChrome();
+  });
   applySidebar();
   renderChrome();
   renderSidebarNow();
-  await openNote(library.active);
+  await openNote(library.state().active);
 }
 
 void boot();

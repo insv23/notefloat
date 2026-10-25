@@ -8,8 +8,14 @@ import (
 	"log"
 	"math"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/egoist/mygo"
+
+	"notefloat/internal/pictures"
+	"notefloat/internal/prefs"
+	"notefloat/internal/store"
 )
 
 // PanelShown tells the page the panel just appeared, so that it can put the
@@ -27,6 +33,10 @@ var PanelHidden = mygo.NewEvent[bool]("panelHidden")
 // item showed the panel.
 var OpenSettings = mygo.NewEvent[bool]("openSettings")
 
+// quitting is set once the page has written the note it holds: the second pass
+// of the quit sequence closes the panel instead of hiding it.
+var quitting atomic.Bool
+
 func main() {
 	mygo.App.SetName("Notefloat")
 	// An accessory app has no Dock icon and no app switcher entry: the panel
@@ -37,32 +47,44 @@ func main() {
 
 	// The notes and the pictures, and the scheme the page loads them with.
 	// Schemes are registered per window, so this comes before the panel.
-	notes := &Notes{}
-	prefs := newPreferences(notes)
-	if err := prefs.startup(); err != nil {
+	notes := &store.Notes{}
+	preferences := prefs.New(notes)
+	if err := prefs.Startup(preferences); err != nil {
 		log.Printf("reading the settings: %v", err)
 	}
 	// The notes live where the user put them, which is known before the first
 	// note is read.
-	mygo.App.SetPath(mygo.PathUserData, prefs.notesDir())
+	mygo.App.SetPath(mygo.PathUserData, prefs.NotesDir(preferences))
 	mygo.Bind(notes)
-	mygo.Bind(prefs)
-	mygo.Bind(&Images{})
-	serveImages()
+	mygo.Bind(preferences)
+	mygo.Bind(&pictures.Images{})
+	pictures.Serve()
 
 	mygo.App.WhenReady(func() {
 		panel := newPanel()
-		prefs.useWindow(panel)
-		prefs.apply()
-		startImageSweep()
+		prefs.UseWindow(preferences, panel)
+		prefs.Apply(preferences)
+		pictures.StartSweep()
 		toggle := toggler(panel)
 
+		// A quit from the tray menu arrives as Cmd-Q does, and the panel's close
+		// handler cancels it: a window that hides itself has not closed, so the
+		// quit never runs and the app is left with no way to stop it. The quit
+		// is let through in two passes instead, the first one saving.
+		mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
+			if quitting.Load() {
+				return
+			}
+			e.PreventDefault()
+			go quitWithSave(panel)
+		})
+
 		shortcut := &globalShortcut{toggle: toggle}
-		if err := shortcut.set(prefs.accel(actionTogglePanel)); err != nil {
+		if err := shortcut.set(prefs.Accel(preferences, prefs.ActionTogglePanel)); err != nil {
 			log.Printf("registering the panel shortcut: %v", err)
 		}
 		shortcut.tray = addTray(panel, shortcut)
-		prefs.useGlobal(shortcut.set)
+		prefs.UseGlobal(preferences, shortcut.set)
 	})
 
 	if err := mygo.App.Run(); err != nil {
@@ -74,8 +96,8 @@ func main() {
 // rather than closed, so that showing it again keeps the page and its state.
 func newPanel() *mygo.Window {
 	panel := mygo.NewWindow(mygo.WindowOptions{
-		Title:       "Notefloat",
-		Panel:       true, // never activates the app, floats over every Space
+		Title: "Notefloat",
+		Panel: true, // never activates the app, floats over every Space
 		// Floating from the start: the panel never activates the app, so a
 		// window at the normal level would sit behind the windows of the app
 		// the user is in, and Show would look like nothing happened.
@@ -95,12 +117,39 @@ func newPanel() *mygo.Window {
 		StateKey: "notefloat",
 		URL:      "/",
 	})
-	// Escape, Cmd-W and the close button hide the panel.
+	// Escape, Cmd-W and the close button hide the panel. A quit is the one time
+	// the window closes for real: hiding it leaves the quit sequence cancelled
+	// and the app running on with nothing to summon it from.
 	panel.OnClose(func(e *mygo.CloseEvent) {
+		if quitting.Load() {
+			return
+		}
 		e.PreventDefault()
 		hide(panel)
 	})
 	return panel
+}
+
+// quitWithSave hides the panel, waits for the page to write the note it holds,
+// and quits for real. The page writes when it hears the panel went away, and a
+// quit that closed the window before that write landed would lose the last
+// keystrokes: the page saves them a moment after they are typed.
+func quitWithSave(panel *mygo.Window) {
+	written := make(chan struct{}, 1)
+	store.OnSave(func() {
+		select {
+		case written <- struct{}{}:
+		default:
+		}
+	})
+	hide(panel)
+	select {
+	case <-written:
+	case <-time.After(time.Second):
+	}
+	store.OnSave(nil)
+	quitting.Store(true)
+	mygo.App.Quit()
 }
 
 // hide hides the panel, after telling the page: the page writes the note it
@@ -110,6 +159,9 @@ func hide(panel *mygo.Window) {
 		log.Print(err)
 	}
 	panel.Hide()
+	// Hiding the panel alone leaves an active app with no windows, which
+	// swallows what the user types next.
+	mygo.App.Hide()
 }
 
 // show reveals the panel over the app the user is in, and puts it near the
@@ -132,13 +184,14 @@ func show(panel *mygo.Window) {
 			d.WorkArea.Y+(d.WorkArea.Height-height)/3,
 		)
 	}
-	// Showing the panel, never the app: the app stays inactive, the panel
-	// takes the keyboard as its key window, and hiding it hands the
-	// keyboard back to the app the user was in. Hiding and unhiding the
-	// app itself is a process-level request to the window server that
-	// lands a run loop later, which loses the window ordering made in the
-	// same key press: the panel then shows on the second press.
+	// The app is shown and focused around the panel. WebKit draws the insertion
+	// point of a field only while the application counts as active, and a panel
+	// that takes the keyboard without activating its app loses the caret of
+	// every field that would have to be painted on its own: an empty line has
+	// no text to repaint, so its caret never reaches the screen.
+	mygo.App.Show()
 	panel.Show()
+	mygo.App.Focus()
 	if err := PanelShown.Emit(panel, true); err != nil {
 		log.Print(err)
 	}

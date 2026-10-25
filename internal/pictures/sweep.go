@@ -1,4 +1,4 @@
-package main
+package pictures
 
 import (
 	"io/fs"
@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+
+	"notefloat/internal/store"
 )
 
 // imageGrace is how long a picture stays after the notes stopped referring to
@@ -28,15 +30,15 @@ var imageRef = regexp.MustCompile(`images/[0-9a-f]{64}\.(?:png|jpg|gif|webp|heic
 // unreferenced one ages from the moment its last note stopped pointing at it,
 // not from when it was pasted.
 func sweepImages(grace time.Duration) error {
-	root, err := appRoot()
+	root, err := store.AppRoot()
 	if err != nil {
 		return err
 	}
-	notes, err := notesDir()
+	notes, err := store.NotesDir()
 	if err != nil {
 		return err
 	}
-	images, err := imagesDir()
+	images, err := store.ImagesDir()
 	if err != nil {
 		return err
 	}
@@ -88,10 +90,10 @@ func sweepImages(grace time.Duration) error {
 	})
 }
 
-// startImageSweep runs the sweep once shortly after the app starts, and then
+// StartSweep runs the sweep once shortly after the app starts, and then
 // once a day. It is a plain goroutine: no launch agent, no timer that keeps the
 // app awake, and nothing to lose if the app is not running that day.
-func startImageSweep() {
+func StartSweep() {
 	go func() {
 		time.Sleep(30 * time.Second)
 		for {

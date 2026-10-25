@@ -1,42 +1,31 @@
-package main
+package store
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/egoist/mygo"
 )
 
 // Everything the app keeps lives in one directory of the user's:
 //
-//	<userData>/notes/<buffer>.txt   one plain text file per note
-//	<userData>/images/<sha256>.<ext>   pasted pictures, flat, named by content
-//	<userData>/library.json        the folders, their notes and which one was open
+//	<userData>/notes/<buffer>.txt    one plain text file per note
+//	<userData>/images/<sha256>.<ext> pasted pictures, flat, named by content
+//	<userData>/library.json          the folders, their notes and which one was open
 //
 // The notes are files of one flat directory whatever folder they show in:
 // folders are an arrangement in library.json, so moving a note between them
 // never moves a file, and a note file stays readable on its own.
-const (
-	notesDirName  = "notes"
-	imagesDirName = "images"
-	libraryFile   = "library.json"
-	imageScheme   = "notefloat-img"
-)
+const LibraryFile = "library.json"
 
 // defaultFolderTitle names the folder the notes of an install without folders
 // end up in.
@@ -44,48 +33,6 @@ const defaultFolderTitle = "Notes"
 
 // newNoteTitle titles a note the user did not name yet.
 const newNoteTitle = "Untitled"
-
-// appRoot returns the app's data directory, creating the directories the app
-// writes to. It is read on every call rather than kept: Preferences may point
-// the app at another directory while it runs.
-func appRoot() (string, error) {
-	root, err := mygo.App.Path(mygo.PathUserData)
-	if err != nil {
-		return "", err
-	}
-	for _, sub := range []string{notesDirName, imagesDirName} {
-		if err := os.MkdirAll(filepath.Join(root, sub), 0o755); err != nil {
-			return "", err
-		}
-	}
-	return root, nil
-}
-
-// defaultAppRoot is the data directory the app uses until the user picks
-// another one.
-func defaultAppRoot() (string, error) {
-	appData, err := mygo.App.Path(mygo.PathAppData)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(appData, mygo.App.Name()), nil
-}
-
-func imagesDir() (string, error) {
-	root, err := appRoot()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, imagesDirName), nil
-}
-
-func notesDir() (string, error) {
-	root, err := appRoot()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(root, notesDirName), nil
-}
 
 // Buffer is one note: a plain text file with a title.
 type Buffer struct {
@@ -116,23 +63,30 @@ type Library struct {
 type libraryFileContent struct {
 	Folders []Folder `json:"folders"`
 	Active  string   `json:"active"`
-	// Buffers is the layout of an install from before folders: one flat list
-	// of notes. It is moved into Folders on the first read.
+	// Buffers is the layout of an install from before folders: one flat list of
+	// notes. It is moved into Folders on the first read.
 	Buffers []Buffer `json:"buffers,omitempty"`
+	// Done holds which blocks of a note the user finished, by note ID: one flag
+	// per block, in the note's order. A note without a finished block is left
+	// out, so that a library of untouched notes stays the size of its folders.
+	Done map[string][]bool `json:"done,omitempty"`
+	// Positions holds where the caret was in a note, by note ID, as an offset
+	// into its text. A note read from the top needs no entry.
+	Positions map[string]int `json:"positions,omitempty"`
 }
 
-// Notes is the store the page calls. Every write is atomic: the file is
-// written beside its destination and renamed, so a crash never leaves a half
-// written note.
+// Notes is the store the page calls. Every write is atomic: the file is written
+// beside its destination and renamed, so a crash never leaves a half written
+// note.
 type Notes struct {
 	mu      sync.Mutex
 	library libraryFileContent
 	loaded  bool
 }
 
-// reset forgets the library read from disk, so that the next call reads it
-// from whichever directory the app points at then.
-func (n *Notes) reset() {
+// Reset forgets the library read from disk, so that the next call reads it from
+// whichever directory the app points at then.
+func (n *Notes) Reset() {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.library = libraryFileContent{}
@@ -143,14 +97,14 @@ func (n *Notes) loadLibrary() error {
 	if n.loaded {
 		return nil
 	}
-	root, err := appRoot()
+	root, err := AppRoot()
 	if err != nil {
 		return err
 	}
-	body, err := os.ReadFile(filepath.Join(root, libraryFile))
+	body, err := os.ReadFile(filepath.Join(root, LibraryFile))
 	if err == nil {
 		if err := json.Unmarshal(body, &n.library); err != nil {
-			log.Printf("reading %s: %v, starting a new library", libraryFile, err)
+			log.Printf("reading %s: %v, starting a new library", LibraryFile, err)
 			n.library = libraryFileContent{}
 		}
 	}
@@ -197,7 +151,7 @@ func (n *Notes) ensureNote() error {
 }
 
 func (n *Notes) saveLibrary() error {
-	root, err := appRoot()
+	root, err := AppRoot()
 	if err != nil {
 		return err
 	}
@@ -205,7 +159,7 @@ func (n *Notes) saveLibrary() error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(filepath.Join(root, libraryFile), body)
+	return WriteFileAtomic(filepath.Join(root, LibraryFile), body)
 }
 
 // firstNote returns the ID of the first note of the first folder that has one.
@@ -239,7 +193,7 @@ func (n *Notes) Library() (Library, error) {
 	if err := n.loadLibrary(); err != nil {
 		return Library{}, err
 	}
-	root, err := appRoot()
+	root, err := AppRoot()
 	if err != nil {
 		return Library{}, err
 	}
@@ -252,202 +206,147 @@ func (n *Notes) Library() (Library, error) {
 		Folders:   folders,
 		Active:    n.library.Active,
 		DataDir:   root,
-		ImagesDir: filepath.Join(root, imagesDirName),
+		ImagesDir: filepath.Join(root, ImagesDirName),
 	}, nil
-}
-
-// absImageRef matches a line holding a whole path under an images directory,
-// the way notes written before pictures were kept relative name them. The path
-// may hold spaces, so only the line ends bound it.
-var absImageRef = regexp.MustCompile(`(?m)^/[^\n]*/images/([0-9a-f]{64}\.(?:png|jpg|gif|webp|heic))[ \t]*$`)
-
-// relativeNote rewrites whole picture paths into the relative form a note
-// keeps, so that the file stays valid wherever the notes are moved to.
-func relativeNote(text string) string {
-	return absImageRef.ReplaceAllString(text, imagesDirName+"/$1")
 }
 
 // Load returns the text of a buffer.
 func (n *Notes) Load(id string) (string, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	dir, err := notesDir()
+	dir, err := NotesDir()
 	if err != nil {
 		return "", err
 	}
-	path := filepath.Join(dir, id+".txt")
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(filepath.Join(dir, id+".txt"))
 	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
 	}
 	if err != nil {
 		return "", err
 	}
-	text := string(body)
-	if fixed := relativeNote(text); fixed != text {
-		// A note written before pictures were kept relative: the file is
-		// carried to the current form the first time it is opened.
-		if err := writeFileAtomic(path, []byte(fixed)); err != nil {
-			log.Printf("rewriting the picture paths of %s: %v", id, err)
-		}
-		text = fixed
-	}
-	return text, nil
+	return string(body), nil
 }
 
-// searchLimit caps what one search hands back. The sidebar lists the matches
-// while the user is still typing, so a word every note holds cannot be allowed
-// to carry the whole library across in one go.
-const searchLimit = 200
+// DoneBlocks reads which blocks of a note the user finished: one flag per
+// block, in the note's order.
+func (n *Notes) DoneBlocks(id string) ([]bool, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if err := n.loadLibrary(); err != nil {
+		return nil, err
+	}
+	return slices.Clone(n.library.Done[id]), nil
+}
 
-// The note file's shapes, as the search reads them: the editor shows a todo
-// without its checkbox, and a picture is not text at all. Both are left out, so
-// that a match is a piece of what the user sees and its offset names a place in
-// the line the editor holds.
+// Position reads where the caret stood in a note the last time it was written,
+// as an offset into its text.
+func (n *Notes) Position(id string) (int, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if err := n.loadLibrary(); err != nil {
+		return 0, err
+	}
+	return n.library.Positions[id], nil
+}
+
+// SetDoneBlocks remembers which blocks of a note the user finished. A note with
+// no finished block is forgotten, so that the file does not grow one entry per
+// note.
+func (n *Notes) SetDoneBlocks(id string, done []bool) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if err := n.loadLibrary(); err != nil {
+		return err
+	}
+	finished := slices.Contains(done, true)
+	if !finished {
+		delete(n.library.Done, id)
+		return n.saveLibrary()
+	}
+	if n.library.Done == nil {
+		n.library.Done = make(map[string][]bool, 1)
+	}
+	n.library.Done[id] = slices.Clone(done)
+	return n.saveLibrary()
+}
+
+// The notes are bound to the page, so every method here is a call the page can
+// make. The write hook is therefore a package function: the page has no way to
+// reach it.
 var (
-	todoPrefix     = regexp.MustCompile(`^\s*- \[[ xX]\] ?(.*)$`)
-	pictureLine    = regexp.MustCompile(`^(?:images/|/).*\.(?:png|jpe?g|gif|webp|heic)\s*$`)
-	blockSeparator = regexp.MustCompile(`^∞∞∞\S*$`)
+	hookMu    sync.Mutex
+	afterSave func()
 )
 
-// SearchHit is one line of a note that matches a search: the note it belongs
-// to, which line of the note's file matched, where in the visible text the
-// match starts, and the lines around it, for the result list to show the
-// match in its place. Offset counts in UTF-16 code units, the index a
-// JavaScript string slices by, so that the page can cut the line at the match
-// with it; a Go byte offset would land elsewhere as soon as the line holds a
-// character that is not ASCII.
-type SearchHit struct {
-	Note   string `json:"note"`
-	Title  string `json:"title"`
-	Line   int    `json:"line"`
-	Offset int    `json:"offset"`
-	Text   string `json:"text"`
-	Before string `json:"before"`
-	After  string `json:"after"`
+// OnSave registers fn, called after a note's text is on disk, or nil to
+// unregister it. The app waits for it before it quits: the page writes when the
+// panel hides, and a quit that outran that write would drop the last keystrokes.
+func OnSave(fn func()) {
+	hookMu.Lock()
+	defer hookMu.Unlock()
+	afterSave = fn
 }
 
-// visibleText is a line of a note as the editor shows it.
-func visibleText(line string) (string, bool) {
-	if blockSeparator.MatchString(line) || pictureLine.MatchString(strings.TrimSpace(line)) {
-		return "", false
+// Save writes a buffer's text and title, and where the caret stood when it was
+// written, so that opening the note again puts the user back where they left
+// it.
+func (n *Notes) Save(id, title, text string, at int) error {
+	if err := n.save(id, title, text, at); err != nil {
+		return err
 	}
-	if todo := todoPrefix.FindStringSubmatch(line); todo != nil {
-		return todo[1], true
+	hookMu.Lock()
+	after := afterSave
+	hookMu.Unlock()
+	if after != nil {
+		after()
 	}
-	return line, true
+	return nil
 }
 
-// utf16Index is how many UTF-16 code units stand in text before byte at: a
-// rune past the Basic Multilingual Plane takes two there.
-func utf16Index(text string, at int) int {
-	units := 0
-	for _, r := range text[:at] {
-		units++
-		if r > 0xFFFF {
-			units++
-		}
-	}
-	return units
-}
-
-// contextLine is a line beside a match, as the result list shows it: a picture
-// and a block separator are no context to read, and neither is a line beyond
-// the note's ends.
-func contextLine(lines []string, at int) string {
-	if at < 0 || at >= len(lines) {
-		return ""
-	}
-	text, ok := visibleText(lines[at])
-	if !ok {
-		return ""
-	}
-	return text
-}
-
-// Search returns the lines of every note that hold query, the notes in the
-// order the sidebar shows them, and the lines in the order they are written.
-// Case folds unless the user asked for a match that does not.
-func (n *Notes) Search(query string, caseSensitive bool) ([]SearchHit, error) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if err := n.loadLibrary(); err != nil {
-		return nil, err
-	}
-	hits := []SearchHit{}
-	if query == "" {
-		return hits, nil
-	}
-	dir, err := notesDir()
-	if err != nil {
-		return nil, err
-	}
-	needle := query
-	if !caseSensitive {
-		needle = strings.ToLower(needle)
-	}
-	for _, folder := range n.library.Folders {
-		for _, buffer := range folder.Buffers {
-			body, err := os.ReadFile(filepath.Join(dir, buffer.ID+".txt"))
-			if err != nil {
-				// A note whose file is gone has nothing to find.
-				continue
-			}
-			lines := strings.Split(string(body), "\n")
-			for number, line := range lines {
-				text, ok := visibleText(line)
-				if !ok {
-					continue
-				}
-				hay := text
-				if !caseSensitive {
-					hay = strings.ToLower(hay)
-				}
-				at := strings.Index(hay, needle)
-				if at < 0 {
-					continue
-				}
-				hits = append(hits, SearchHit{
-					Note:   buffer.ID,
-					Title:  buffer.Title,
-					Line:   number,
-					Offset: utf16Index(text, at),
-					Text:   text,
-					Before: contextLine(lines, number-1),
-					After:  contextLine(lines, number+1),
-				})
-				if len(hits) >= searchLimit {
-					return hits, nil
-				}
-			}
-		}
-	}
-	return hits, nil
-}
-
-// Save writes a buffer's text and title.
-func (n *Notes) Save(id, title, text string) error {
+func (n *Notes) save(id, title, text string, at int) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if err := n.loadLibrary(); err != nil {
 		return err
 	}
-	dir, err := notesDir()
+	dir, err := NotesDir()
 	if err != nil {
 		return err
 	}
-	if err := writeFileAtomic(filepath.Join(dir, id+".txt"), []byte(relativeNote(text))); err != nil {
+	if err := WriteFileAtomic(filepath.Join(dir, id+".txt"), []byte(text)); err != nil {
 		return err
 	}
 	fi, bi, ok := n.locate(id)
 	if !ok {
 		return fmt.Errorf("unknown buffer %q", id)
 	}
-	if n.library.Folders[fi].Buffers[bi].Title == title {
+	changed := n.setPosition(id, min(at, len(text)))
+	if n.library.Folders[fi].Buffers[bi].Title != title {
+		n.library.Folders[fi].Buffers[bi].Title = title
+		changed = true
+	}
+	if !changed {
 		return nil
 	}
-	n.library.Folders[fi].Buffers[bi].Title = title
 	return n.saveLibrary()
+}
+
+// setPosition keeps where the caret stood in the note, and reports whether the
+// library holds something else now.
+func (n *Notes) setPosition(id string, at int) bool {
+	if n.library.Positions[id] == at {
+		return false
+	}
+	if at <= 0 {
+		delete(n.library.Positions, id)
+		return true
+	}
+	if n.library.Positions == nil {
+		n.library.Positions = make(map[string]int, 1)
+	}
+	n.library.Positions[id] = at
+	return true
 }
 
 // Create adds a note to a folder and returns it. An empty folderID puts it in
@@ -478,12 +377,12 @@ func (n *Notes) Create(folderID, title string) (Buffer, error) {
 }
 
 func (n *Notes) create(title string) (Buffer, error) {
-	dir, err := notesDir()
+	dir, err := NotesDir()
 	if err != nil {
 		return Buffer{}, err
 	}
 	id := newID()
-	if err := writeFileAtomic(filepath.Join(dir, id+".txt"), nil); err != nil {
+	if err := WriteFileAtomic(filepath.Join(dir, id+".txt"), nil); err != nil {
 		return Buffer{}, err
 	}
 	return Buffer{ID: id, Title: title}, nil
@@ -535,8 +434,8 @@ func (n *Notes) RenameFolder(id, title string) error {
 	return n.saveLibrary()
 }
 
-// ReorderFolders puts the folders in the order of ids, which names every one
-// of them.
+// ReorderFolders puts the folders in the order of ids, which names every one of
+// them.
 func (n *Notes) ReorderFolders(ids []string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -559,8 +458,8 @@ func (n *Notes) ReorderFolders(ids []string) error {
 	return n.saveLibrary()
 }
 
-// MoveNote puts a note at index of a folder's notes. The index is the place
-// the note takes among the notes as the caller sees them, before the move.
+// MoveNote puts a note at index of a folder's notes. The index is the place the
+// note takes among the notes as the caller sees them, before the move.
 func (n *Notes) MoveNote(id, folderID string, index int) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -606,9 +505,9 @@ func (n *Notes) SetPinned(id string, pinned bool) error {
 	return n.saveLibrary()
 }
 
-// Remove deletes a note's file and forgets it. Pictures it referred to are
-// left to the sweep, which waits before trashing anything, so that an undo of
-// the deletion would still find them.
+// Remove deletes a note's file and forgets it. Pictures it referred to are left
+// to the sweep, which waits before trashing anything, so that an undo of the
+// deletion would still find them.
 func (n *Notes) Remove(id string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -631,13 +530,15 @@ func (n *Notes) Remove(id string) error {
 	if err := n.ensureNote(); err != nil {
 		return err
 	}
-	dir, err := notesDir()
+	dir, err := NotesDir()
 	if err != nil {
 		return err
 	}
 	if err := mygo.Shell.TrashItem(filepath.Join(dir, id+".txt")); err != nil {
 		log.Printf("trashing the note %s: %v", id, err)
 	}
+	delete(n.library.Done, id)
+	delete(n.library.Positions, id)
 	return n.saveLibrary()
 }
 
@@ -693,7 +594,7 @@ func (n *Notes) RemoveFolder(ctx context.Context, id string) error {
 	if fi < 0 {
 		return fmt.Errorf("unknown folder %q", id)
 	}
-	dir, err := notesDir()
+	dir, err := NotesDir()
 	if err != nil {
 		return err
 	}
@@ -701,6 +602,8 @@ func (n *Notes) RemoveFolder(ctx context.Context, id string) error {
 		if err := mygo.Shell.TrashItem(filepath.Join(dir, buffer.ID+".txt")); err != nil {
 			log.Printf("trashing the note %s: %v", buffer.ID, err)
 		}
+		delete(n.library.Done, buffer.ID)
+		delete(n.library.Positions, buffer.ID)
 	}
 	n.library.Folders = slices.Delete(n.library.Folders, fi, fi+1)
 	if _, _, ok := n.locate(n.library.Active); !ok {
@@ -723,111 +626,10 @@ func (n *Notes) Activate(id string) error {
 	return n.saveLibrary()
 }
 
-// Images stores the pictures pasted into a note.
-type Images struct {
-	mu sync.Mutex
-}
-
-// Save writes a pasted picture and returns its path relative to the data
-// directory, images/<sha>.<ext>, which the note then holds as plain text: the
-// note keeps finding its pictures after the whole directory moves. The pasted
-// bytes name the file, so pasting one picture twice stores it once.
-// The name is the SHA-256 of the bytes, so pasting the same picture twice
-// reuses one file, and a note dropping its reference cannot pull a file
-// another note still points at.
-func (i *Images) Save(data string) (string, error) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	raw, err := base64.StdEncoding.DecodeString(data)
-	if err != nil {
-		return "", fmt.Errorf("decoding the picture: %w", err)
-	}
-	if len(raw) == 0 {
-		return "", errors.New("the picture is empty")
-	}
-	root, err := imagesDir()
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(raw)
-	name := hex.EncodeToString(sum[:]) + imageExt(raw)
-	dir := root
-	path := filepath.Join(dir, name)
-	rel := filepath.ToSlash(filepath.Join(imagesDirName, name))
-	if _, statErr := os.Stat(path); statErr == nil {
-		// The picture is already stored: keep its clock running so that the
-		// sweep does not trash it soon after this paste.
-		now := time.Now()
-		_ = os.Chtimes(path, now, now)
-		return rel, nil
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	if err := writeFileAtomic(path, raw); err != nil {
-		return "", err
-	}
-	return rel, nil
-}
-
-// imageExt picks the extension from the bytes rather than from what the
-// clipboard claims, so that a renamed or mislabelled file still opens.
-func imageExt(raw []byte) string {
-	switch http.DetectContentType(raw) {
-	case "image/png":
-		return ".png"
-	case "image/jpeg":
-		return ".jpg"
-	case "image/gif":
-		return ".gif"
-	case "image/webp":
-		return ".webp"
-	case "image/heic", "image/heif":
-		return ".heic"
-	default:
-		return ".png"
-	}
-}
-
 func newID() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		panic(err)
 	}
 	return hex.EncodeToString(b[:])
-}
-
-// writeFileAtomic writes data to a temporary file beside path and renames it
-// over path.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
-}
-
-// serveImages lets the page show a picture by its path: the note keeps the
-// absolute path, and the page asks imageScheme for the part after images/.
-func serveImages() {
-	dir, err := imagesDir()
-	if err != nil {
-		log.Printf("serving the pictures: %v", err)
-		return
-	}
-	if err := mygo.Protocol.Handle(imageScheme, mygo.FileServer(os.DirFS(dir))); err != nil {
-		log.Printf("serving the pictures: %v", err)
-	}
 }

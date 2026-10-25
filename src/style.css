@@ -676,136 +676,146 @@ textarea {
 .editor {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 0 0 40vh;
+  display: flex;
 }
 
-.blocks {
+/* The note is a CodeMirror document: the file's text with todos, pictures and
+   the lines between blocks drawn over it. It owns its own scroller and its own
+   caret, which is why no line here is an element that could lose one. */
+.editor .cm-editor {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  color: var(--fg);
   font-family: var(--mono);
   font-size: 13.5px;
   line-height: 1.65;
 }
 
-/* A block is one unit of the note: its lines stay together, and a hairline
-   across the whole width separates it from the next one, as the line under the
-   title bar does. The inset lives in the padding so the hairline reaches both
-   edges. */
-.blk {
-  padding: 7px 18px;
-}
-
-.blk + .blk {
-  border-top: 1px solid var(--line);
-}
-
-/* The text of a block is one row: the checkbox of a todo, then its text. */
-.blk-line {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-}
-
-/* The word a search stopped on: a box laid over the text, since a text field
-   cannot paint part of its own text without the caret in it. */
-.find-mark {
-  position: absolute;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
-  pointer-events: none;
-}
-
-.blk textarea {
-  flex: 1;
-  min-width: 0;
-  border: 0;
+.editor .cm-editor.cm-focused {
   outline: none;
+}
+
+.editor .cm-scroller {
+  overflow-y: auto;
   padding: 0;
-  background: none;
-  resize: none;
-  overflow: hidden;
-  font: inherit;
-  color: inherit;
+  font-family: inherit;
+}
+
+/* No padding above the first line: a block is the height of its lines plus
+   their own 7px of padding, so the room under the title bar is the room under a
+   hairline and the first block is as tall as the rest. The space under the last
+   line belongs to the text, not to the scroller: a press anywhere below it puts
+   the caret at the end of the note, so an empty block at the end always has
+   somewhere to click. */
+.editor .cm-content {
+  min-height: 100%;
+  padding: 0 18px 40vh;
   caret-color: var(--accent);
 }
 
-.blk textarea::placeholder {
+.editor .cm-line {
+  padding: 7px 0;
+}
+
+/* The selection is the browser's own, so it runs under the words the user
+   picked and nowhere else: a picture is tinted where the picture sits, and no
+   band reaches across the panel behind it. */
+.editor .cm-content ::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* The hint of an empty note runs to three lines, which is what it takes to say
+   what the panel does; it stands where the caret will be. */
+.editor .cm-placeholder {
   color: var(--muted);
+  white-space: pre-wrap;
 }
 
-/* The hint of an empty note runs to three lines, while an empty textarea
-   scrolls to one; the height autosize sets would cut the rest off. */
-.blk textarea:placeholder-shown {
-  min-height: calc(3 * 1.65em);
+/* The word a search stopped on. */
+.editor .cm-find-match {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-.blk-check {
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  margin: 3px 0 0;
-  accent-color: var(--accent);
+/* The checkbox a todo's prefix becomes. It is drawn here rather than by the
+   system, so that a checked line keeps the quiet frame of an open one: the same
+   grey outline with a grey mark inside, instead of a filled accent box. */
+.cm-todo-check {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 7px 0 0;
+  border: 1px solid var(--muted);
+  border-radius: 3.5px;
+  background-color: transparent;
+  /* The box's bottom meets the bottom of the text beside it, descenders
+     included: a box aligned to the baseline reads as sitting high against
+     Chinese, and one pushed down reads as spilling into the line below. */
+  vertical-align: text-bottom;
   cursor: default;
 }
 
-/* A finished todo dims: a textarea does not paint text-decoration. */
-.blk-line.done textarea {
+.cm-todo-check:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.3 4.9 8.6 9.4 3.4' fill='none' stroke='%237a7f88' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 12px 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cm-todo-check:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.3 4.9 8.6 9.4 3.4' fill='none' stroke='%238b919b' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+
+/* A finished block fades as a whole: its text greys out and what pictures it
+   holds lose weight, so the block reads as one thing that is done. Nothing in
+   the text marks it: the state is kept beside the note, and ⌘B is what sets
+   it. */
+.cm-block-done {
   color: var(--muted);
 }
 
-/* Where a search stopped: the line the match is on, tinted so that stepping
-   through the matches shows even while the caret is in the find field. */
-
-/* A picture takes its place in the block's flow, with the line pasted after it
-   following underneath. */
-.blk-pic {
-  position: relative;
-  width: fit-content;
-  margin: 6px 0 2px;
+.cm-block-done .cm-picture,
+.cm-block-done .cm-todo-check {
+  opacity: 0.55;
 }
 
-/* A picture takes the keyboard when it is focused: the ring says so, and Enter
-   then writes a line under it. */
-.blk-pic:focus {
-  outline: none;
-}
-
-.blk-pic:focus img {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.blk-pic img {
-  display: block;
+/* A picture takes its place in the note's flow. The picture is the widget
+   itself, so the caret after it stands at the picture's own right edge. */
+.cm-picture {
+  display: inline-block;
+  vertical-align: top;
   max-width: min(100%, 560px);
   max-height: 360px;
+  margin: 2px 0;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
 
-.blk-pic-remove {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 14px;
-  line-height: 1;
-  opacity: 0;
-  cursor: default;
+/* The hairline two blocks meet at. It reaches both edges of the panel, as the
+   line under the title bar does. */
+.cm-divider {
+  display: block;
+  height: 1px;
+  margin: 0 -18px;
+  background: var(--line);
 }
 
-.blk-pic:hover .blk-pic-remove {
-  opacity: 1;
+/* The block the note does not have yet. It sits under the last block that holds
+   text, drawn but not written: the separator appears only when a press lands on
+   it, and the text cursor over it says that the room is meant to be typed in. */
+.cm-empty-block {
+  min-height: 52px;
+  margin: 0 -18px;
+  border-top: 1px solid var(--line);
+  cursor: text;
 }
 
-/* The selection ⌘A makes and ⌘X removes: whole blocks, not text. */
-.blk.selected {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
+.cm-empty-block:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 
 /* ---- settings ---- */
@@ -1060,10 +1070,42 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* The opacity slider, drawn here rather than by the system: a native slider
+   thumb composites against the panel's transparent window, so what lies under
+   the page shows through the thumb as the note's text. */
 .slider {
+  appearance: none;
   width: 140px;
-  accent-color: var(--accent);
+  height: 16px;
+  background: none;
   --app-region: no-drag;
+  /* The thumb is 14px wide, so its centre travels from 7px to the track's
+     width minus 7px. --fill ends where that centre is, and --ratio is its
+     place along the travel, set by the slider's own code. */
+  --thumb: 14px;
+  --fill: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--ratio, 1));
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--fg) 0,
+    var(--fg) var(--fill, 100%),
+    color-mix(in srgb, var(--fg) 18%, transparent) var(--fill, 100%),
+    color-mix(in srgb, var(--fg) 18%, transparent) 100%
+  );
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--fg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .switch {

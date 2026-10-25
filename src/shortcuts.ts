@@ -17,28 +17,6 @@ const MODIFIER_NAMES: Record<string, string> = {
   shift: "Shift",
 };
 
-// Named keys keep the spelling mygo's parser knows.
-const NAMED_KEYS: Record<string, string> = {
-  enter: "Enter",
-  return: "Enter",
-  tab: "Tab",
-  " ": "Space",
-  space: "Space",
-  backspace: "Backspace",
-  delete: "Delete",
-  escape: "Escape",
-  esc: "Escape",
-  arrowup: "Up",
-  arrowdown: "Down",
-  arrowleft: "Left",
-  arrowright: "Right",
-  home: "Home",
-  end: "End",
-  pageup: "PageUp",
-  pagedown: "PageDown",
-  "+": "+",
-};
-
 // CODE_KEYS names the keys whose accelerator name differs from their key code:
 // punctuation, the keys that carry a name of their own, and the number pad.
 const CODE_KEYS: Record<string, string> = {
@@ -78,6 +56,15 @@ const CODE_KEYS: Record<string, string> = {
   AudioVolumeDown: "VolumeDown",
   AudioVolumeMute: "VolumeMute",
 };
+
+// PARSE_KEYS reads an accelerator back, in the spelling mygo's parser knows:
+// every name a code stands for, and the few ways the settings have held one
+// ("return" for Enter, a bare space for Space).
+const PARSE_KEYS: Record<string, string> = (() => {
+  const names: Record<string, string> = { " ": "Space", return: "Enter", esc: "Escape" };
+  for (const name of Object.values(CODE_KEYS)) names[name.toLowerCase()] = name;
+  return names;
+})();
 
 // KEYCODE_KEYS names the keys whose code the browser leaves out, as it does
 // while an input method composes Option+G into "©": the virtual key is what
@@ -145,7 +132,7 @@ export function canonical(accel: string): string {
       mods.add(isMac ? "Super" : "Ctrl");
       continue;
     }
-    key = part.length === 1 ? part.toUpperCase() : (NAMED_KEYS[lower] ?? part);
+    key = part.length === 1 ? part.toUpperCase() : (PARSE_KEYS[lower] ?? part);
   }
   const ordered = MODIFIER_ORDER.filter((mod) => mods.has(mod));
   return [...ordered, key].join("+");
@@ -185,7 +172,7 @@ function keyNameFromKeyCode(keyCode: number): string | null {
 function keyNameFromEvent(event: KeyboardEvent): string | null {
   const key = event.key;
   if (/^F\d{1,2}$/.test(key)) return key;
-  const named = NAMED_KEYS[key.toLowerCase()];
+  const named = PARSE_KEYS[key.toLowerCase()];
   if (named) return named;
   if (/^[\x20-\x7e]$/.test(key)) return key.toUpperCase();
   return null;

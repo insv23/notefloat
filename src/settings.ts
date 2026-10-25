@@ -287,8 +287,18 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
   appearance.append(opacityRow.row);
 
   let opacityTimer = 0;
-  const applyOpacity = (percent: number) => {
+  /** showOpacity puts the value in the label and in the filled part of the
+   * track, which the track draws from --ratio. The slider runs from 40 to 100,
+   * not from 0, so the fill is the value's place in that range and not the
+   * value itself: at 95 the thumb sits at 91.7% of the track. */
+  const showOpacity = (percent: number) => {
     opacityValue.textContent = `${percent}%`;
+    const min = Number(opacity.min);
+    const max = Number(opacity.max);
+    opacity.style.setProperty("--ratio", String((percent - min) / (max - min)));
+  };
+  const applyOpacity = (percent: number) => {
+    showOpacity(percent);
     window.clearTimeout(opacityTimer);
     // The panel follows the slider while it moves; settings.json keeps the
     // value the user stopped at.
@@ -324,7 +334,7 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
     renderShortcuts(settings);
     const percent = Math.round(settings.opacity * 100);
     opacity.value = String(percent);
-    opacityValue.textContent = `${percent}%`;
+    showOpacity(percent);
     aboutName.textContent = info.name;
     aboutVersion.textContent = "Version " + (info.version || "0.1.0");
     callbacks.onSettings(settings);
@@ -365,12 +375,15 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
 
 function message(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
-  // mygo names the key it turned down, which the page never showed the user.
-  if (text.includes("cannot be used in a global shortcut")) {
+  // A refused shortcut starts with the code for it; the rest of the line is
+  // what the log keeps, and reads well enough to show anyway.
+  const [code, ...rest] = text.split(": ");
+  if (code === "shortcut-needs-modifier") {
     return "This key cannot be used for a shortcut that works in every app";
   }
-  // The system refuses a shortcut another app already holds, and macOS gives
-  // no way to ask which one: say what the user can act on.
+  if (code === "shortcut-in-use") return rest.join(": ");
+  // The system refuses a shortcut another app already holds, and macOS gives no
+  // way to ask which one: say what the user can act on.
   if (text.includes("cannot register shortcut")) {
     return "Another app on this Mac already uses this shortcut";
   }
