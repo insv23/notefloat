@@ -53,24 +53,26 @@ function iconButton(label: string, title: string, onClick: () => void): HTMLButt
 const FOLDER_PATH =
   "M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6c.4 0 .8.2 1 .5l.8 1h4.6A1.5 1.5 0 0 1 14 6v5.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z";
 
+/** The pin's two states: hollow while the note is not pinned, solid once it is.
+ * The shape says which, so the icon keeps the row's one color. */
 const PIN_PATH =
+  "M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408-.002-.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458 1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282";
+
+const PIN_SOLID_PATH =
   "M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z";
 
-function pinMark(): SVGSVGElement {
+function pinMark(pinned: boolean): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", PIN_PATH);
+  path.setAttribute("d", pinned ? PIN_SOLID_PATH : PIN_PATH);
   path.setAttribute("fill", "currentColor");
   svg.append(path);
   return svg;
 }
 
-/** noteActions is the one place a note's pin and its delete button live: both
- * slots are always laid out, so the title keeps its width as the pointer moves,
- * and a pinned note shows its pin without hovering, as the pin is also the
- * state. */
+/** folderGlyph is the mark of a folder's name. */
 function folderGlyph(): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
@@ -82,15 +84,18 @@ function folderGlyph(): SVGSVGElement {
   return svg;
 }
 
+/** noteActions is the one place a note's pin and its delete button live: both
+ * slots are always laid out, so the title keeps its width as the pointer moves,
+ * and both show only while the pointer is on the row. */
 function noteActions(buffer: Buffer, actions: SidebarActions): HTMLElement {
   const group = document.createElement("div");
   group.className = "buffer-actions";
 
   const pin = document.createElement("button");
-  pin.className = "icon buffer-pin" + (buffer.pinned ? " on" : "");
+  pin.className = "icon buffer-pin";
   pin.title = buffer.pinned ? "Unpin Note" : "Pin Note";
   pin.setAttribute("aria-label", pin.title);
-  pin.append(pinMark());
+  pin.append(pinMark(buffer.pinned ?? false));
   pin.addEventListener("click", (event) => {
     event.stopPropagation();
     actions.togglePin(buffer.id);
@@ -109,7 +114,6 @@ function noteItem(buffer: Buffer, folder: Folder, index: number, active: string,
   item.dataset.noteId = buffer.id;
   item.dataset.folderId = folder.id;
   item.dataset.index = String(index);
-  if (buffer.pinned) item.classList.add("is-pinned");
 
   const name = document.createElement("button");
   name.className = "buffer-name";
@@ -224,10 +228,14 @@ function folderItem(folder: Folder, library: Library, active: string, host: HTML
     rename(name, folder.title, (title) => actions.renameFolder(folder.id, title));
   });
 
-  head.append(folderGlyph(), name, iconButton("+", "New Note", () => actions.newNote(folder.id)));
+  const buttons = document.createElement("div");
+  buttons.className = "folder-actions";
+  buttons.append(iconButton("+", "New Note", () => actions.newNote(folder.id)));
   if (library.folders.length > 1) {
-    head.append(iconButton("×", "Delete Folder", () => actions.deleteFolder(folder.id)));
+    buttons.append(iconButton("×", "Delete Folder", () => actions.deleteFolder(folder.id)));
   }
+
+  head.append(folderGlyph(), name, buttons);
 
   head.addEventListener("dragstart", (event) => {
     drag = { kind: "folder", id: folder.id };
@@ -291,27 +299,21 @@ function folderItem(folder: Folder, library: Library, active: string, host: HTML
 /** renderSidebar draws the whole sidebar from the library. */
 export function renderSidebar(hosts: SidebarHosts, library: Library, active: string, actions: SidebarActions) {
   const pinned = library.folders.flatMap((folder) => folder.buffers.filter((buffer) => buffer.pinned));
-  // The Pinned section stays where it is whether or not anything is pinned:
-  // it is a place in the sidebar, not a folder that appears and disappears.
-  if (pinned.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "group-empty";
-    empty.textContent = "Nothing pinned";
-    hosts.pinned.replaceChildren(empty);
-  } else {
-    hosts.pinned.replaceChildren(
-      ...pinned.map((buffer) => {
-        const item = document.createElement("li");
-        item.className = "buffer pinned-item" + (buffer.id === active ? " active" : "");
-        const name = document.createElement("button");
-        name.className = "buffer-name";
-        name.textContent = buffer.title || "Untitled";
-        name.addEventListener("click", () => actions.openNote(buffer.id));
-        item.append(name, noteActions(buffer, actions));
-        return item;
-      }),
-    );
-  }
+  // The Pinned section stays where it is whether or not anything is pinned: it
+  // is a place in the sidebar, not a folder that appears and disappears. Notes
+  // in it or nothing in it, and no line saying which.
+  hosts.pinned.replaceChildren(
+    ...pinned.map((buffer) => {
+      const item = document.createElement("li");
+      item.className = "buffer" + (buffer.id === active ? " active" : "");
+      const name = document.createElement("button");
+      name.className = "buffer-name";
+      name.textContent = buffer.title || "Untitled";
+      name.addEventListener("click", () => actions.openNote(buffer.id));
+      item.append(name, noteActions(buffer, actions));
+      return item;
+    }),
+  );
   hosts.folders.replaceChildren(
     ...library.folders.map((folder) => folderItem(folder, library, active, hosts.folders, actions)),
   );

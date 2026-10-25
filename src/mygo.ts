@@ -76,6 +76,12 @@ export interface Settings {
   opacity: number;
   /** SidebarHidden remembers the sidebar closed. */
   sidebarHidden: boolean;
+  /**
+   * SidebarWidth is how wide the sidebar was dragged, in pixels; the page
+   * keeps it between sidebarWidthMin and sidebarWidthMax as well, for a
+   * window narrow enough that the maximum would leave the note no room.
+   */
+  sidebarWidth: number;
 }
 
 /**
@@ -271,6 +277,10 @@ export const Preferences = {
    */
   setSidebarHidden(hidden: boolean): Promise<void> {
     return call("Preferences.SetSidebarHidden", hidden);
+  },
+  /** SetSidebarWidth remembers how wide the sidebar was dragged. */
+  setSidebarWidth(width: number): Promise<void> {
+    return call("Preferences.SetSidebarWidth", width);
   },
   /** Shortcuts lists the actions the settings page shows, defaults included. */
   shortcuts(): Promise<ShortcutDef[]> {

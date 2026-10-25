@@ -31,7 +31,19 @@ type Settings struct {
 	Opacity float64 `json:"opacity"`
 	// SidebarHidden remembers the sidebar closed.
 	SidebarHidden bool `json:"sidebarHidden"`
+	// SidebarWidth is how wide the sidebar was dragged, in pixels; the page
+	// keeps it between sidebarWidthMin and sidebarWidthMax as well, for a
+	// window narrow enough that the maximum would leave the note no room.
+	SidebarWidth int `json:"sidebarWidth"`
 }
+
+// The sidebar the user can drag wider or narrower: narrow enough that it can be
+// folded away to its edge, wide enough to read a note's name without hovering it.
+const (
+	sidebarWidthMin     = 50
+	sidebarWidthMax     = 360
+	sidebarWidthDefault = 200
+)
 
 // DefaultSettings is the state of an install the user has not changed.
 func DefaultSettings() Settings {
@@ -41,7 +53,7 @@ func DefaultSettings() Settings {
 	}
 	// The panel floats, so that it shows over the app the user is in; see
 	// newPanel in main.go.
-	return Settings{Shortcuts: shortcuts, Opacity: 1}
+	return Settings{Shortcuts: shortcuts, Opacity: 1, SidebarWidth: sidebarWidthDefault}
 }
 
 // Preferences is the store of Settings, and applies the ones that reach past the
@@ -149,6 +161,9 @@ func mergeSettings(defaults, stored Settings) Settings {
 		merged.Opacity = min(max(stored.Opacity, 0.4), 1)
 	}
 	merged.SidebarHidden = stored.SidebarHidden
+	if stored.SidebarWidth != 0 {
+		merged.SidebarWidth = min(max(stored.SidebarWidth, sidebarWidthMin), sidebarWidthMax)
+	}
 	for action, accel := range stored.Shortcuts {
 		// A shortcut of an action a version dropped stays out, so that the page
 		// binds nothing it cannot run.
@@ -273,6 +288,21 @@ func (p *Preferences) SetSidebarHidden(hidden bool) error {
 		return nil
 	}
 	p.settings.SidebarHidden = hidden
+	return p.save()
+}
+
+// SetSidebarWidth remembers how wide the sidebar was dragged.
+func (p *Preferences) SetSidebarWidth(width int) error {
+	width = min(max(width, sidebarWidthMin), sidebarWidthMax)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.load(); err != nil {
+		return err
+	}
+	if p.settings.SidebarWidth == width {
+		return nil
+	}
+	p.settings.SidebarWidth = width
 	return p.save()
 }
 

@@ -31,6 +31,7 @@ const findbarHost = $("#findbar");
 const searchDialogHost = $("#search-dialog");
 const openSearchButton = $("#open-search");
 const openSearchKey = $("#open-search-key");
+const sidebarResizer = $("#sidebar-resizer");
 
 const library = createLibrary();
 const bindings = createBindings();
@@ -65,8 +66,7 @@ function renderSidebarNow() {
   });
 }
 
-/** renderChrome shows the state of the active note's pin and the keys that
- * reach each button. */
+/** renderChrome puts the key that reaches each button in its tooltip. */
 function renderChrome() {
   settingsButton.title = `Settings (${keyOf("settings")})`;
   newNoteButton.title = `New Note (${keyOf("newNote")})`;
@@ -99,8 +99,72 @@ function flash(text: string) {
   }, 1200);
 }
 
+// The sidebar the user can drag: the range the settings store, and the room the
+// note keeps, so that a narrow panel never squeezes the note shut.
+const SIDEBAR_MIN = 50;
+const SIDEBAR_MAX = 360;
+const SIDEBAR_DEFAULT = 200;
+const NOTE_MIN = 260;
+
+/** sidebarWidth is the width the user dragged to; what is drawn is that, clamped
+ * to the room the panel has now. */
+let sidebarWidth = SIDEBAR_DEFAULT;
+
+function clampSidebarWidth(width: number): number {
+  const room = Math.max(SIDEBAR_MIN, app.clientWidth - NOTE_MIN);
+  return Math.round(Math.min(Math.max(width, SIDEBAR_MIN), Math.min(SIDEBAR_MAX, room)));
+}
+
+function applySidebarWidth() {
+  app.style.setProperty("--sidebar-width", `${clampSidebarWidth(sidebarWidth)}px`);
+}
+
+/** setupSidebarResizer drags the sidebar's edge. The drag only moves the CSS
+ * variable; the width is written to the settings once, when the pointer is let
+ * go, instead of on every pixel. */
+function setupSidebarResizer() {
+  const saveWidth = () => {
+    if (sidebarWidth === settings.sidebarWidth) return;
+    settings.sidebarWidth = sidebarWidth;
+    void Preferences.setSidebarWidth(sidebarWidth);
+  };
+  sidebarResizer.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const left = app.getBoundingClientRect().left;
+    sidebarResizer.setPointerCapture(event.pointerId);
+    sidebarResizer.classList.add("dragging");
+    const move = (moveEvent: PointerEvent) => {
+      sidebarWidth = clampSidebarWidth(moveEvent.clientX - left);
+      applySidebarWidth();
+    };
+    const end = () => {
+      sidebarResizer.removeEventListener("pointermove", move);
+      sidebarResizer.removeEventListener("pointerup", end);
+      sidebarResizer.removeEventListener("pointercancel", end);
+      sidebarResizer.classList.remove("dragging");
+      saveWidth();
+    };
+    sidebarResizer.addEventListener("pointermove", move);
+    sidebarResizer.addEventListener("pointerup", end);
+    sidebarResizer.addEventListener("pointercancel", end);
+  });
+  // A double click puts the sidebar back where it starts, for a drag that went
+  // wrong, without hunting for the pixel it was at.
+  sidebarResizer.addEventListener("dblclick", () => {
+    sidebarWidth = SIDEBAR_DEFAULT;
+    applySidebarWidth();
+    saveWidth();
+  });
+  // A window narrower than the sidebar was dragged for takes room from it, and
+  // gives it back when it grows: the width the user chose is kept either way.
+  window.addEventListener("resize", applySidebarWidth);
+}
+
 function applySidebar() {
+  sidebarWidth = settings.sidebarWidth || SIDEBAR_DEFAULT;
   app.classList.toggle("no-sidebar", settings.sidebarHidden);
+  applySidebarWidth();
 }
 
 function toggleSidebar() {
@@ -322,6 +386,7 @@ events.openSettings.on(() => openSettings());
 
 async function boot() {
   watchComposition();
+  setupSidebarResizer();
   const [, stored] = await Promise.all([library.load(), Preferences.get()]);
   settings = stored;
   settingsUI = createSettings(settingsHost, {
