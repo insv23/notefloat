@@ -2,6 +2,12 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.3 — 2026-10-26
+
+### Fixed
+
+- The caret of an empty note was stretched by the placeholder: as many lines as the placeholder had, so tall was the caret drawn, one vertical line running through the whole of it. The placeholder is down to a single line now, and the caret is one line tall again. Every other shortcut stays listed in Settings › Shortcuts.
+
 ## 0.1.2 — 2026-10-25
 
 ### Added

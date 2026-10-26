@@ -4,7 +4,7 @@ import { DEV_URL } from "./dev.config.ts";
 export default defineConfig({
   name: "Notefloat",
   identifier: "dev.tony.notefloat",
-  version: "0.1.2",
+  version: "0.1.3",
   // `mygo dev` runs devCommand and loads devUrl; `mygo build` runs
   // buildCommand and embeds frontendDist into the app.
   devUrl: DEV_URL,

@@ -60,21 +60,12 @@ export type EditorOptions = {
   binding: (action: string) => string;
 };
 
-/** hintText is what an empty note shows: the caret goes on the first line, the
- * keys that shape a note on the second, and what the panel is on the third. */
+/** hintText is what an empty note shows, on one line: where to type, and the key
+ * that says a note is made of blocks. The rest of the keys live in the settings,
+ * where they can be read again; this line disappears at the first keystroke. */
 function hintText(binding: EditorOptions["binding"]) {
-  const summon = formatAccel(binding("togglePanel"));
-  const todo = formatAccel(binding("toggleTodo"));
   const block = formatAccel(binding("addBlockBelow"));
-  const fade = formatAccel(binding("toggleBlockDone"));
-  const keys = [
-    summon && `${summon} summons`,
-    todo && `${todo} todo`,
-    block && `${block} block`,
-    fade && `${fade} done`,
-    "Esc hides",
-  ];
-  return ["Type here", keys.filter(Boolean).join(" · "), "Floating notes · todos · pasted pictures"].join("\n");
+  return block ? `Type here · ${block} new block` : "Type here";
 }
 
 /** theMatch is the word a search stopped on, drawn over the text. */

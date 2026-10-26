@@ -738,8 +738,8 @@ textarea {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-/* The hint of an empty note runs to three lines, which is what it takes to say
-   what the panel does; it stands where the caret will be. */
+/* The hint of an empty note is one line: where to type, and the one key a plain
+   text editor has no answer for. It stands where the caret will be. */
 .editor .cm-placeholder {
   color: var(--muted);
   white-space: pre-wrap;
