@@ -1,8 +1,9 @@
 // The editor's key map: which keys the settings decide, and which belong to the
 // note whatever they say. A bindable key is matched against the settings on every
 // press, so a shortcut changed in the settings works in the note already open.
-// The fixed keys are the ones that must keep their place: a new line, taking a
-// picture or a block away whole, and undo.
+// The fixed keys are the ones that must keep their place: a new line, the two
+// keys that step across a picture, the two delete keys and the boundary they take
+// from a block, and undo.
 import { Prec, type Extension } from "@codemirror/state";
 import { keymap, type EditorView, type KeyBinding } from "@codemirror/view";
 import { insertNewline, redo, undo } from "@codemirror/commands";
@@ -16,6 +17,7 @@ import {
   moveBlock,
   selectBlock,
   splitBlock,
+  stepAcrossPicture,
   toggleBlockDone,
   toggleLineCheck,
   toggleTodo,
@@ -41,11 +43,19 @@ const editorActions: Record<string, (view: EditorView) => boolean> = {
 export const editorActionNames = Object.keys(editorActions);
 
 /** noteKeys are the keys that stay the note's whatever the settings say: typing
- * a line, taking a picture or a block away whole, and undo. */
+ * a line, stepping across a picture, taking a picture's path or a block's
+ * boundary away, and undo. */
 const noteKeys: KeyBinding[] = [
   { key: "Enter", run: insertNewline },
   { key: "Backspace", run: backspace },
   { key: "Delete", run: deleteForward },
+  // macOS TextEdit has no delete to the end of the line either, and the key would
+  // only join the line below onto a picture's path.
+  { key: "Mod-Delete", run: () => true },
+  { key: "ArrowLeft", run: (view) => stepAcrossPicture(view, false, false) },
+  { key: "ArrowRight", run: (view) => stepAcrossPicture(view, true, false) },
+  { key: "Shift-ArrowLeft", run: (view) => stepAcrossPicture(view, false, true) },
+  { key: "Shift-ArrowRight", run: (view) => stepAcrossPicture(view, true, true) },
   { key: "Mod-z", run: undo },
   { key: "Mod-Shift-z", run: redo },
   { key: "Mod-y", run: redo },

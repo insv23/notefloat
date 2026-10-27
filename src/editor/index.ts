@@ -8,8 +8,10 @@ import { Decoration, EditorView, placeholder, type DecorationSet } from "@codemi
 import { history } from "@codemirror/commands";
 import { absolute, imageURL } from "../paths";
 import { formatAccel } from "../shortcuts";
+import { clearPicture, picturesKept } from "./commands";
 import { noteKeymap } from "./keymap";
-import { doneBlocks, doneFlags, noteView, pictureSource } from "./widgets";
+import { picturePath } from "./model";
+import { doneBlocks, doneFlags, longTokens, noteView, pictureSource } from "./widgets";
 
 export type FindOptions = { caseSensitive: boolean; back: boolean };
 export type FindResult = { total: number; index: number };
@@ -112,6 +114,10 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     EditorView.lineWrapping,
     noteView,
     matchField,
+    longTokens,
+    // A picture's line holds nothing but its path, so no edit may leave text on
+    // it: the path is what the picture is drawn from.
+    EditorState.changeFilter.of(picturesKept),
     doneBlocks.init((state) => ({ done: options.done, decorations: doneFlags(state.doc, options.done) })),
     pictureSource.of({
       url: (path) => imageURL(path),
@@ -151,10 +157,12 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
   }
 
   /**
-   * addPictures puts the pictures on their own lines under the line the caret is
-   * in, and leaves an empty line below them where the caret waits. A bare line
-   * that the caret sits in holds the pictures itself, so that no blank line is
-   * left above them.
+   * addPictures puts each picture on a line of its own, with a break before it and
+   * a break after it: a picture is a path that fills its line, and nothing else on
+   * that line is drawn. A line the caret sits in that holds nothing but its own
+   * break takes the pictures itself, so no blank line is left above them; any other
+   * line keeps its text and the pictures start under it. The caret waits on the
+   * line below them.
    */
   async function addPictures(editor: EditorView, files: File[]) {
     const paths: string[] = [];
@@ -166,11 +174,11 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     const { state } = editor;
     const line = state.doc.lineAt(state.selection.main.from);
     const bare = line.text.trim() === "";
+    const at = bare ? line.from : line.to;
     const insert = bare ? `${paths.join("\n")}\n` : `\n${paths.join("\n")}\n`;
-    const at = (bare ? line.from : line.to) + insert.length;
     editor.dispatch({
-      changes: { from: bare ? line.from : line.to, to: line.to, insert },
-      selection: EditorSelection.cursor(at),
+      changes: { from: at, insert },
+      selection: EditorSelection.cursor(at + insert.length),
       scrollIntoView: true,
     });
     editor.focus();
@@ -180,8 +188,8 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
    * stands on one, and the selected text otherwise. */
   function copiedText(): { text: string; picture: boolean } | null {
     const line = view.state.doc.lineAt(view.state.selection.main.head);
-    const path = line.text.trim().match(/^images\/[^\n]+$/);
-    if (path) return { text: wholePath(path[0]), picture: true };
+    const path = picturePath(line.text);
+    if (path !== null) return { text: absolute(path, options.imagesDir), picture: true };
     const selection = view.state.selection.main;
     const text = view.state.sliceDoc(selection.from, selection.to);
     return text === "" ? null : { text: wholePath(text), picture: false };
@@ -208,9 +216,7 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     const selection = view.state.selection.main;
     const line = view.state.doc.lineAt(selection.head);
     if (copied.picture) {
-      const from = line.from > 0 ? line.from - 1 : 0;
-      const to = Math.min(view.state.doc.length, line.to + 1);
-      view.dispatch({ changes: { from, to, insert: "" }, selection: EditorSelection.cursor(from) });
+      clearPicture(view, line);
       view.focus();
       return;
     }

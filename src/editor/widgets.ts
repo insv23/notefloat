@@ -3,7 +3,7 @@
 // picture path and a ∞∞∞ line into what the user sees. The document stays the
 // note file's text, so nothing has to be written back. The one thing drawn
 // without text behind it is the empty block the note does not have yet.
-import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { EditorSelection, Facet, RangeSet, StateEffect, StateField, type EditorState, type Range, type Text } from "@codemirror/state";
 import { blockRanges, flipTodoCheck, lineKind, SEPARATOR } from "./model";
 
@@ -79,17 +79,20 @@ class PictureWidget extends WidgetType {
     img.alt = this.path.split("/").pop() ?? "Picture";
     img.title = this.whole;
     img.draggable = false;
-    // A press puts the caret on the picture's line, where Enter, Backspace and
-    // ⌘C act on it.
+    // A press puts the caret at the nearer end of the picture, before or after
+    // the path: the two places a delete acts on the picture from.
     img.addEventListener("mousedown", (event) => {
       event.preventDefault();
-      let pos: number;
+      let anchor: number;
       try {
-        pos = view.posAtDOM(img);
+        anchor = view.posAtDOM(img);
       } catch {
         return;
       }
-      view.dispatch({ selection: EditorSelection.cursor(pos) });
+      const line = view.state.doc.lineAt(anchor);
+      const box = img.getBoundingClientRect();
+      const at = event.clientX < box.left + box.width / 2 ? line.from : line.to;
+      view.dispatch({ selection: EditorSelection.cursor(at) });
       view.focus();
     });
     return img;
@@ -199,6 +202,9 @@ function note(state: EditorState): NoteView {
       continue;
     }
     if (kind.kind === "picture") {
+      // The line is marked so that it can be kept one visual row at any width:
+      // a picture that wrapped would leave the caret on a row of its own.
+      ranges.push(Decoration.line({ class: "cm-picture-line" }).range(line.from));
       replaced(line.from, line.to, new PictureWidget(kind.path, source.url(kind.path), source.whole(kind.path)));
       continue;
     }
@@ -231,6 +237,41 @@ export const noteView = StateField.define<NoteView>({
     EditorView.atomicRanges.of((view) => view.state.field(field).atomic),
   ],
 });
+
+/** markLongTokens marks the stretches of a line a reader would not expect to be
+ * one word: a path, a link, a hash, 24 characters or more with no space in it.
+ * The browser holds such a run whole and pushes it to the next line even when the
+ * line it left had room, so each one is marked to break anywhere and fill the
+ * line it starts on. */
+function markLongTokens(doc: Text): DecorationSet {
+  const marks: Range<Decoration>[] = [];
+  for (let number = 1; number <= doc.lines; number++) {
+    const line = doc.line(number);
+    const run = /\S{24,}/gu;
+    for (let found = run.exec(line.text); found; found = run.exec(line.text)) {
+      const from = line.from + found.index;
+      marks.push(Decoration.mark({ class: "cm-long-token" }).range(from, from + found[0].length));
+    }
+  }
+  return Decoration.set(marks, true);
+}
+
+/** longTokens lets a long run break inside itself, so that prose keeps breaking
+ * at its spaces while a path or a link fills the line it starts on. */
+export const longTokens = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = markLongTokens(view.state.doc);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = markLongTokens(update.state.doc);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 /** setDoneBlocks replaces which blocks of the note the user finished. */
 export const setDoneBlocks = StateEffect.define<boolean[]>();

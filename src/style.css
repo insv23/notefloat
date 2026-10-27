@@ -56,6 +56,33 @@ textarea {
   position: relative;
 }
 
+/* Every scroller in the panel draws its own scrollbar, thin, with no track and
+   none of the buttons macOS puts at the ends: the system one is as wide as the
+   user's setting says, and a note panel has no room for it. Width zero takes it
+   away whole, and the trackpad still scrolls. */
+* {
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--fg) 20%, transparent);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
 /* ---- sidebar ---- */
 
 .sidebar {
@@ -751,6 +778,14 @@ textarea {
   background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/* A stretch with no space in it — a path, a link, a hash — may break inside, so
+   that it fills the line it starts on and goes on below. Left alone, the browser
+   moves such a run down whole and breaks it only once it stands alone on a row.
+   Prose is not marked, so it keeps breaking at its spaces. */
+.editor .cm-long-token {
+  word-break: break-all;
+}
+
 /* The checkbox a todo's prefix becomes. It is drawn here rather than by the
    system, so that a checked line keeps the quiet frame of an open one: the same
    grey outline with a grey mark inside, instead of a filled accent box. */
@@ -796,15 +831,25 @@ textarea {
 }
 
 /* A picture takes its place in the note's flow. The picture is the widget
-   itself, so the caret after it stands at the picture's own right edge. */
+   itself, so the caret before or after it stands at the picture's own edge.
+   The border counts inside the line's width, so the picture can never be wider
+   than the row that holds it. */
 .cm-picture {
   display: inline-block;
   vertical-align: top;
+  box-sizing: border-box;
   max-width: min(100%, 560px);
   max-height: 360px;
   margin: 2px 0;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+/* A picture's line is one visual row at any width. Were it to wrap, the caret
+   before the picture would be drawn on a row of its own above it, and the keys
+   would stop moving the way a line of the note moves. */
+.cm-picture-line {
+  white-space: nowrap;
 }
 
 /* The hairline two blocks meet at. It reaches both edges of the panel, as the
