@@ -1,11 +1,10 @@
 // What the note's text is drawn as. A line is text in the document like any
 // other; these decorations are the only thing that turns a todo prefix, a
 // picture path and a ∞∞∞ line into what the user sees. The document stays the
-// note file's text, so nothing has to be written back. The one thing drawn
-// without text behind it is the empty block the note does not have yet.
+// note file's text, so nothing has to be written back.
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { EditorSelection, Facet, RangeSet, StateEffect, StateField, type EditorState, type Range, type Text } from "@codemirror/state";
-import { blockRanges, flipTodoCheck, lineKind, SEPARATOR } from "./model";
+import { blockRanges, flipTodoCheck, lineKind } from "./model";
 
 /** PictureSource turns the path a note holds into what the page loads and what
  * leaves the app when the picture's path is copied. */
@@ -128,49 +127,6 @@ class HairlineWidget extends WidgetType {
   }
 }
 
-/** EmptyBlockWidget is the block the note does not have yet. Under a last block
- * that holds text it shows where the next block would start, and the press on
- * it is what writes the separator, so a note gains an empty block only when the
- * user reaches for one. */
-class EmptyBlockWidget extends WidgetType {
-  eq() {
-    return true;
-  }
-
-  toDOM(view: EditorView) {
-    const box = document.createElement("div");
-    box.className = "cm-empty-block";
-    box.setAttribute("aria-label", "New block");
-    box.addEventListener("mousedown", (event) => {
-      // The press is the whole gesture: the caret is not moved through the last
-      // block first, so the browser's own placement is left out.
-      event.preventDefault();
-      appendBlock(view);
-      view.focus();
-    });
-    return box;
-  }
-
-  // The press belongs to the empty block, not to the last block's text.
-  ignoreEvent() {
-    return true;
-  }
-}
-
-/** appendBlock writes the separator the empty block stands for: a new block
- * under the last one, with the caret waiting in it. */
-function appendBlock(view: EditorView) {
-  const { state } = view;
-  const at = state.doc.length;
-  const insert = `\n${SEPARATOR}\n`;
-  view.dispatch({
-    changes: { from: at, insert },
-    selection: EditorSelection.cursor(at + insert.length),
-    effects: setDoneBlocks.of([...doneOf(state), false]),
-    scrollIntoView: true,
-  });
-}
-
 /** NoteView is what the editor needs to draw the note and to know which parts
  * of it the caret steps over as a whole. */
 type NoteView = { decorations: DecorationSet; atomic: RangeSet<Decoration> };
@@ -211,14 +167,6 @@ function note(state: EditorState): NoteView {
     if (kind.kind === "todo") {
       replaced(line.from, line.from + kind.prefix, new TodoWidget(kind.done));
     }
-  }
-  // The last block holds text, so there is room under it for the block the note
-  // does not have yet. A note that already ends in an empty block has nothing
-  // to offer: the caret has somewhere to go there.
-  const blocks = blockRanges(doc);
-  const last = blocks[blocks.length - 1];
-  if (last && last.to > last.from) {
-    ranges.push(Decoration.widget({ widget: new EmptyBlockWidget(), block: true, side: 1 }).range(doc.length));
   }
   return { decorations: Decoration.set(ranges, true), atomic: RangeSet.of(atomic, true) };
 }

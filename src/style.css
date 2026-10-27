@@ -861,20 +861,6 @@ textarea {
   background: var(--line);
 }
 
-/* The block the note does not have yet. It sits under the last block that holds
-   text, drawn but not written: the separator appears only when a press lands on
-   it, and the text cursor over it says that the room is meant to be typed in. */
-.cm-empty-block {
-  min-height: 52px;
-  margin: 0 -18px;
-  border-top: 1px solid var(--line);
-  cursor: text;
-}
-
-.cm-empty-block:hover {
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
-}
-
 /* ---- settings ---- */
 
 .settings {

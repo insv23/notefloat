@@ -283,35 +283,31 @@ function caretBeside(doc: Text, line: Line, step: -1 | 1): number {
 }
 
 /** deleteEmptyBlock removes a block that is one empty line, together with the
- * separator tying it to its neighbour: what Backspace on an empty block does. */
+ * separator tying it to its neighbour: what Backspace on an empty block does.
+ * The note's last block is the empty one the editor keeps there, and the change
+ * that takes it away would only write it again, so the key steps out of it
+ * instead: the caret goes to the end of the block above. */
 function deleteEmptyBlock(view: EditorView): boolean {
   const { state } = view;
   const selection = state.selection.main;
   if (!selection.empty) return false;
   const range = blockAt(state.doc, selection.head);
-  const first = state.doc.lineAt(range.from);
-  const last = state.doc.lineAt(range.to);
-  if (first.number !== last.number || first.text.trim() !== "") return false;
-  if (blockRanges(state.doc).length === 1) return false;
-  // The block goes, and so does its finish flag.
-  const flags = flagsAround(state, blockNumber(state.doc, range), null);
-  if (range.to < state.doc.length) {
-    const separator = state.doc.lineAt(range.to + 1);
-    const to = Math.min(state.doc.length, separator.to + 1);
-    view.dispatch({
-      changes: { from: range.from, to, insert: "" },
-      selection: EditorSelection.cursor(Math.min(range.from, state.doc.length - (to - range.from))),
-      effects: setDoneBlocks.of(flags),
-      scrollIntoView: true,
-    });
+  if (range.from !== range.to || state.doc.lineAt(range.from).text.trim() !== "") return false;
+  const blocks = blockRanges(state.doc).length;
+  const index = blockNumber(state.doc, range);
+  if (blocks === 1) return false;
+  if (index === blocks - 1) {
+    const separator = state.doc.lineAt(range.from - 1);
+    view.dispatch({ selection: EditorSelection.cursor(separator.from - 1), scrollIntoView: true });
     return true;
   }
-  const separator = state.doc.lineAt(Math.max(0, range.from - 1));
-  const from = Math.max(0, separator.from - 1);
+  // The block goes, and so does its finish flag.
+  const separator = state.doc.lineAt(range.to + 1);
+  const to = Math.min(state.doc.length, separator.to + 1);
   view.dispatch({
-    changes: { from, to: state.doc.length, insert: "" },
-    selection: EditorSelection.cursor(from),
-    effects: setDoneBlocks.of(flags),
+    changes: { from: range.from, to, insert: "" },
+    selection: EditorSelection.cursor(range.from),
+    effects: setDoneBlocks.of(flagsAround(state, index, null)),
     scrollIntoView: true,
   });
   return true;

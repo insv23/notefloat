@@ -1,7 +1,7 @@
 // The note's file format, read as text. The document string is the note: the
 // editor never keeps a second copy of it, and everything below works on the
 // text alone. A block is a run of lines between two ∞∞∞ lines.
-import type { Text } from "@codemirror/state";
+import { Text } from "@codemirror/state";
 
 export const IMAGE_DIR = "images/";
 export const SEPARATOR = "∞∞∞";
@@ -67,6 +67,24 @@ export function blockAt(doc: Text, pos: number): BlockRange {
     if (pos >= range.from && pos <= range.to) return range;
   }
   return ranges[ranges.length - 1]!;
+}
+
+/** tailOf is what the note still needs to end in an empty block: the separator
+ * under a last block that holds text and the empty line that follows it, the
+ * break a note ending in a separator still wants, or nothing at all. The note's
+ * tail is a block like any other, written down, not drawn in front of the text. */
+export function tailOf(doc: Text): string {
+  if (doc.length === 0) return "";
+  const last = doc.line(doc.lines);
+  if (last.text !== "") return isSeparator(last.text) ? "\n" : `\n${SEPARATOR}\n`;
+  const above = doc.lines > 1 ? doc.line(doc.lines - 1).text : "";
+  return isSeparator(above) ? "" : `${SEPARATOR}\n`;
+}
+
+/** tailed is a note's text as the editor holds it: ending in the empty block the
+ * caret can be written in without reaching for a key first. */
+export function tailed(text: string): string {
+  return text + tailOf(Text.of(text.split("\n")));
 }
 
 /** blockNumber is the block's place in the note, from 0. */

@@ -96,12 +96,13 @@ package under `internal/`:
 The page is `src/`, and the editor is CodeMirror 6:
 
 - `src/editor/model.ts` — the note's file format read as text: a line's kind, the
-  blocks between `∞∞∞` lines, and a picture's path.
+  blocks between `∞∞∞` lines, a picture's path, and the separator a note still
+  lacks to end in an empty block.
 - `src/editor/widgets.ts` — what the text is drawn as: a todo's checkbox, a
   picture, the hairline a `∞∞∞` line becomes.
 - `src/editor/commands.ts` — what the keys do, as changes to the text.
-- `src/editor/index.ts` — the editor: one document, one selection, and the
-  find/reveal the rest of the app calls.
+- `src/editor/index.ts` — the editor: one document that always ends in an empty
+  block, one selection, and the find/reveal the rest of the app calls.
 - `src/paths.ts` — the one rule for a picture's path: `images/<name>` in the
   note, the whole path in a copy, a scheme URL for the page.
 - `src/main.ts` — the app shell: sidebar, title, shortcuts, the editor host.
@@ -121,7 +122,9 @@ Notes live in `~/Library/Application Support/Notefloat/`: one `.txt` per note,
 blocks separated by a line holding `∞∞∞`, todo lines prefixed `- [ ] `, and
 pictures as lines holding `images/<sha256>.<ext>`, relative to the data
 directory so that moving the notes carries their pictures along. The editor
-expands them to whole paths when the user copies blocks. `library.json` holds the folders, each folder's note
+expands them to whole paths when the user copies blocks. A note always ends in
+an empty block, so what the app writes ends with a `∞∞∞` line and the empty
+line after it. `library.json` holds the folders, each folder's note
 order, which notes are pinned, which note was open and where its caret stood.
 `settings.json` sits in
 the same directory, which is also the default save location, and stays there

@@ -10,7 +10,7 @@ import { absolute, imageURL } from "../paths";
 import { formatAccel } from "../shortcuts";
 import { clearPicture, picturesKept } from "./commands";
 import { noteKeymap } from "./keymap";
-import { picturePath } from "./model";
+import { picturePath, tailOf, tailed } from "./model";
 import { doneBlocks, doneFlags, longTokens, noteView, pictureSource } from "./widgets";
 
 export type FindOptions = { caseSensitive: boolean; back: boolean };
@@ -73,6 +73,21 @@ function hintText(binding: EditorOptions["binding"]) {
 /** theMatch is the word a search stopped on, drawn over the text. */
 const setMatch = StateEffect.define<{ from: number; to: number } | null>();
 
+/** trailingBlock keeps the note ending in an empty block. A change that leaves
+ * text as the last block is followed by the separator the note needs, in the
+ * same transaction: the tail is written as the rest of the text is, the caret
+ * never has to be placed in a block that is drawn but not written, and an undo
+ * takes the tail away with the keystroke that called for it. */
+const trailingBlock = EditorState.transactionFilter.of((transaction) => {
+  if (!transaction.docChanged) return transaction;
+  const insert = tailOf(transaction.newDoc);
+  if (insert === "") return transaction;
+  // The transaction comes first, and the tail is placed in the document it
+  // leaves: a sequential spec measures its change in that document rather than
+  // in the one the transaction started from.
+  return [transaction, { changes: { from: transaction.newDoc.length, insert }, sequential: true }];
+});
+
 const matchField = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(mark, transaction) {
@@ -109,11 +124,16 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
    * on disk, so that it opens from anywhere. */
   const wholePath = (text: string) => text.replace(/^images\/[^\n]+$/gm, (line) => absolute(line, options.imagesDir));
 
+  // The note the editor opens is the file's text plus the empty block at its
+  // end, so the first thing typed under the last block needs no key of its own.
+  const text = tailed(options.doc);
+
   const extensions = [
     history(),
     EditorView.lineWrapping,
     noteView,
     matchField,
+    trailingBlock,
     longTokens,
     // A picture's line holds nothing but its path, so no edit may leave text on
     // it: the path is what the picture is drawn from.
@@ -147,10 +167,10 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
 
   // The caret goes where the last edit left it, and the view scrolls to it: a
   // note picked up in the middle reads from the line the user stopped on.
-  const start = Math.max(0, Math.min(options.at, options.doc.length));
+  const start = Math.max(0, Math.min(options.at, text.length));
   const view = new EditorView({
     parent,
-    state: EditorState.create({ doc: options.doc, selection: EditorSelection.cursor(start), extensions }),
+    state: EditorState.create({ doc: text, selection: EditorSelection.cursor(start), extensions }),
   });
   if (start > 0) {
     view.dispatch({ effects: EditorView.scrollIntoView(start, { y: "center" }) });
