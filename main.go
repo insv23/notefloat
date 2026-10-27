@@ -247,7 +247,7 @@ func (g *globalShortcut) set(accel string) error {
 	g.current = accel
 	if g.tray != nil {
 		g.tray.SetMenu(trayMenu(g.panel, g.toggle, accel))
-		g.tray.SetToolTip("Notefloat — " + accel)
+		g.tray.SetToolTip(appTitle() + " — " + accel)
 	}
 	return nil
 }
@@ -269,9 +269,9 @@ func addTray(panel *mygo.Window, shortcut *globalShortcut) *mygo.Tray {
 	shortcut.mu.Unlock()
 	tray, err := mygo.NewTray(mygo.TrayOptions{
 		ID:             "notefloat",
-		Icon:           trayIcon(),
+		Icon:           trayIcon(mygo.IsDev()),
 		IconIsTemplate: true,
-		ToolTip:        "Notefloat — " + accel,
+		ToolTip:        appTitle() + " — " + accel,
 		Menu:           trayMenu(panel, toggle, accel),
 	})
 	if err != nil {
@@ -279,6 +279,15 @@ func addTray(panel *mygo.Window, shortcut *globalShortcut) *mygo.Tray {
 		return nil
 	}
 	return tray
+}
+
+// appTitle is the name the tray answers to: a development build says so, since
+// the dev app and the installed app share the menu bar.
+func appTitle() string {
+	if mygo.IsDev() {
+		return "Notefloat Dev"
+	}
+	return "Notefloat"
 }
 
 func trayMenu(panel *mygo.Window, toggle func(), accel string) *mygo.Menu {
@@ -300,7 +309,10 @@ func trayMenu(panel *mygo.Window, toggle func(), accel string) *mygo.Menu {
 // trayIcon draws the menu bar icon: the panel icon's node graph, on the 32px
 // grid the menu bar hands a template image. macOS tints a template for light
 // and dark menu bars, so the ink is black and only the alpha carries the shape.
-func trayIcon() []byte {
+// A development build adds a D in the bottom left, the one corner the graph
+// leaves free, so that the dev app and the installed app are told apart at a
+// glance.
+func trayIcon(dev bool) []byte {
 	const (
 		size    = 32
 		samples = 4 // per axis; the graph has no straight pixel edges to rely on
@@ -325,6 +337,9 @@ func trayIcon() []byte {
 		{cols[1], rows[1], cols[2], rows[1]},
 		{cols[1], rows[1], cols[1], rows[2]},
 	}
+	// The D sits in the bottom left, the corner the graph leaves empty: the
+	// left column holds one dot at the top and nothing below it.
+	badge := badgeD{left: 2.2, top: 20.2, right: 10, bottom: 30.8, stroke: 2.2}
 	img := image.NewRGBA(image.Rect(0, 0, size, size))
 	for y := range size {
 		for x := range size {
@@ -333,7 +348,7 @@ func trayIcon() []byte {
 				for sx := 0; sx < samples; sx++ {
 					px := float64(x) + (float64(sx)+0.5)/samples
 					py := float64(y) + (float64(sy)+0.5)/samples
-					if graphInk(px, py, dots, bars, dot, bar) {
+					if graphInk(px, py, dots, bars, dot, bar) || (dev && badge.ink(px, py)) {
 						covered++
 					}
 				}
@@ -350,6 +365,29 @@ func trayIcon() []byte {
 		return nil
 	}
 	return buf.Bytes()
+}
+
+// badgeD is the D that marks a development build: a stem on the left and a
+// half ring on the right whose centre sits on the stem's edge, so the bowl and
+// the stem meet. Its box is the corner of the tray icon the graph leaves empty.
+type badgeD struct{ left, top, right, bottom, stroke float64 }
+
+func (d badgeD) ink(x, y float64) bool {
+	stemRight := d.left + d.stroke
+	if x >= d.left && x <= stemRight && y >= d.top && y <= d.bottom {
+		return true
+	}
+	outer := d.right - stemRight
+	inner := outer - d.stroke
+	if inner < 0 {
+		return false
+	}
+	dx, dy := x-stemRight, y-(d.top+d.bottom)/2
+	if dx < 0 {
+		return false
+	}
+	r := math.Hypot(dx, dy)
+	return r <= outer && r >= inner
 }
 
 // graphInk reports whether a point falls inside one of the dots or one of the
