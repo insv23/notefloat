@@ -2,6 +2,26 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.5 — 2026-10-27
+
+### Added
+
+- Blocks fold. Command-D folds the block the caret is in, and a second press unfolds it; Command-Shift-D folds the whole note, or unfolds all of it at once. A folded block is drawn as a read-only reading view cut to the height the settings hold, so however far the window is dragged wider or narrower, a folded block stays that many rows tall, whatever number of text lines it holds.
+- The bottom of a folded block carries a gradient blur: the last row fades out and blurs, saying there is more under it. A block shorter than that height wears it as well.
+- A press on a folded block unfolds it with the caret where the press was, ready to type; the block the caret steps into comes back as text, and folds again once the caret leaves.
+- The funnel at the right of the titlebar switches between showing every block and showing only the blocks not marked done. Hollow means nothing is filtered, filled means it is; the choice is not remembered, so the panel opens showing everything.
+- Appearance holds a Fold Height slider: how many rows a folded block keeps, 1 to 12, 4 by default, taking effect as it is dragged. The two new shortcuts are listed under Shortcuts too.
+
+### Changed
+
+- A block's done mark is stored differently: it used to sit in library.json, queued by the block's place, and now it rides on the ∞∞∞ line that closes the block (|done / |folded) together with the fold mark. The mark travels with its block — moving, splitting, deleting, undoing, or editing the note in another editor all leave it on the block it was set on. An older library is moved into the note files the first time this version opens it.
+- Opacity and Fold Height in Appearance give the name a line of its own and the slider the next one, so a narrow panel no longer lays the two over each other.
+
+### Fixed
+
+- A block marked done used to lose its grey once folded and pressed into: it came back at full brightness. It stays grey folded, open, and shown by the filter alike.
+- Undoing an added or deleted block, or adding and deleting blocks in another editor, used to move the done mark onto the neighbouring block; with the mark in the note, it no longer slips.
+
 ## 0.1.4 — 2026-10-27
 
 ### Added
