@@ -44,6 +44,17 @@ function row(label: string): { row: HTMLElement; side: HTMLElement } {
   return { row: line, side };
 }
 
+/** sliderRow is a setting whose value is a slider with what it stands at: the
+ * name takes the first line, the track and the number the second, because the
+ * card can be narrow enough that the two never fit side by side. */
+function sliderRow(label: string): { row: HTMLElement; side: HTMLElement } {
+  const line = el("div", "settings-row settings-row-stacked");
+  line.append(el("span", "settings-label", label));
+  const side = el("div", "settings-value settings-slider-line");
+  line.append(side);
+  return { row: line, side };
+}
+
 function checkbox(checked: boolean, onChange: (checked: boolean) => void): HTMLInputElement {
   const input = el("input");
   input.type = "checkbox";
@@ -89,6 +100,9 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
   });
 
   let current: SettingsSection = "general";
+  // What the settings hold now, so that a slider moved while the card is open
+  // starts from the value the others are at.
+  let shownSettings: Settings;
 
   // ---- General ----
 
@@ -276,7 +290,7 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
   const appearance = pages.get("appearance")!;
   appearance.append(el("h2", "settings-heading", "Appearance"));
 
-  const opacityRow = row("Opacity");
+  const opacityRow = sliderRow("Opacity");
   const opacity = el("input", "slider");
   opacity.type = "range";
   opacity.min = "40";
@@ -307,6 +321,36 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
   opacity.addEventListener("input", () => applyOpacity(Number(opacity.value)));
   opacity.addEventListener("change", () => void Preferences.setOpacity(Number(opacity.value) / 100));
 
+  const foldRow = sliderRow("Fold Height");
+  const fold = el("input", "slider");
+  fold.type = "range";
+  fold.min = "1";
+  fold.max = "12";
+  fold.step = "1";
+  const foldValue = el("span", "settings-number", "4 lines");
+  foldRow.side.append(fold, foldValue);
+  appearance.append(foldRow.row);
+
+  /** showFold puts how many lines a folded block keeps in the label and in the
+   * filled part of the track. The block that is too short to fold keeps its
+   * lines either way: the marks stay, and the height decides what shows. */
+  const showFold = (lines: number) => {
+    foldValue.textContent = lines === 1 ? "1 line" : `${lines} lines`;
+    const min = Number(fold.min);
+    const max = Number(fold.max);
+    fold.style.setProperty("--ratio", String((lines - min) / (max - min)));
+  };
+  fold.addEventListener("input", () => {
+    const lines = Number(fold.value);
+    showFold(lines);
+    callbacks.onSettings({ ...shownSettings, foldLines: lines });
+  });
+  fold.addEventListener("change", () => {
+    const lines = Number(fold.value);
+    shownSettings.foldLines = lines;
+    void Preferences.setFoldLines(lines);
+  });
+
   // ---- About ----
 
   const about = pages.get("about")!;
@@ -327,6 +371,7 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
 
   async function refresh() {
     const [settings, list, info] = await Promise.all([Preferences.get(), Preferences.shortcuts(), Preferences.about()]);
+    shownSettings = settings;
     defs = list;
     loginBox.checked = settings.openAtLogin;
     dirPath.textContent = info.dataDir;
@@ -335,6 +380,8 @@ export function createSettings(host: HTMLElement, callbacks: SettingsCallbacks):
     const percent = Math.round(settings.opacity * 100);
     opacity.value = String(percent);
     showOpacity(percent);
+    fold.value = String(settings.foldLines);
+    showFold(settings.foldLines);
     aboutName.textContent = info.name;
     aboutVersion.textContent = "Version " + (info.version || "0.1.0");
     callbacks.onSettings(settings);

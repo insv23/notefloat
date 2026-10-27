@@ -32,6 +32,7 @@ const searchDialogHost = $("#search-dialog");
 const openSearchButton = $("#open-search");
 const openSearchKey = $("#open-search-key");
 const sidebarResizer = $("#sidebar-resizer");
+const blockFilterButton = $<HTMLButtonElement>("#block-filter");
 
 const library = createLibrary();
 const bindings = createBindings();
@@ -176,16 +177,28 @@ function toggleSidebar() {
   if (settings.sidebarHidden) view?.focus();
 }
 
+/** showUnfinished is the block filter: the note draws every block, or only the
+ * ones the user has not finished. It lives for the time the panel is open, so
+ * that a note opens whole every time. */
+let showUnfinished = false;
+
+function applyFilter() {
+  blockFilterButton.setAttribute("aria-pressed", String(showUnfinished));
+  blockFilterButton.title = showUnfinished ? "Show All Blocks" : "Show Unfinished Blocks";
+  view?.setFilter(showUnfinished ? "unfinished" : "all");
+}
+
 function applySettings(next: Settings) {
   settings = next;
   bindings.set(settings);
   applySidebar();
   renderChrome();
+  view?.setFoldLimit(settings.foldLines);
 }
 
 async function openNote(id: string) {
   await save.flush();
-  const [text, done, at] = await Promise.all([Notes.load(id), Notes.doneBlocks(id), Notes.position(id)]);
+  const [text, at] = await Promise.all([Notes.load(id), Notes.position(id)]);
   activeId = id;
   await Notes.activate(id);
   titleEl.value = library.titleOf(id);
@@ -193,16 +206,14 @@ async function openNote(id: string) {
   view = createEditor(editorHost, {
     doc: text,
     at,
-    done,
+    foldLimit: settings.foldLines,
     imagesDir: library.state().imagesDir,
     binding: (action) => settings.shortcuts[action] ?? "",
     onChange: save.schedule,
-    // The finished blocks sit beside the note in library.json, and are written
-    // as the key is pressed: they are one flag, not a page of text.
-    onDone: (flags) => void Notes.setDoneBlocks(id, flags).catch(() => {}),
     onImage: saveImage,
     onStatus: flash,
   });
+  applyFilter();
   renderSidebarNow();
   renderChrome();
   findBar.noteChanged();
@@ -370,6 +381,12 @@ newFolderButton.addEventListener("click", () => void addFolder());
 toggleSidebarButton.addEventListener("click", toggleSidebar);
 showSidebarButton.addEventListener("click", toggleSidebar);
 openSearchButton.addEventListener("click", openNoteSearch);
+blockFilterButton.addEventListener("click", () => {
+  showUnfinished = !showUnfinished;
+  applyFilter();
+  // The press was about reading, so the note keeps the keyboard.
+  view?.focus();
+});
 
 // The panel is hidden rather than closed, so the page keeps its state; the
 // caret has to be put back by hand once it appears again.

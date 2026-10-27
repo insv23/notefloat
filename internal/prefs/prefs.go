@@ -35,6 +35,10 @@ type Settings struct {
 	// keeps it between sidebarWidthMin and sidebarWidthMax as well, for a
 	// window narrow enough that the maximum would leave the note no room.
 	SidebarWidth int `json:"sidebarWidth"`
+	// FoldLines is how many rows of a folded block stay on screen. The page
+	// draws a folded block as the note's own text cut at that height, so the
+	// number holds whatever the note wraps to.
+	FoldLines int `json:"foldLines"`
 }
 
 // The sidebar the user can drag wider or narrower: narrow enough that it can be
@@ -45,6 +49,14 @@ const (
 	sidebarWidthDefault = 200
 )
 
+// The lines of a folded block the user can keep in view: one leaves the block's
+// first line, twelve still save the height of a long block.
+const (
+	foldLinesMin     = 1
+	foldLinesMax     = 12
+	foldLinesDefault = 4
+)
+
 // DefaultSettings is the state of an install the user has not changed.
 func DefaultSettings() Settings {
 	shortcuts := make(map[string]string, len(shortcutDefs))
@@ -53,7 +65,7 @@ func DefaultSettings() Settings {
 	}
 	// The panel floats, so that it shows over the app the user is in; see
 	// newPanel in main.go.
-	return Settings{Shortcuts: shortcuts, Opacity: 1, SidebarWidth: sidebarWidthDefault}
+	return Settings{Shortcuts: shortcuts, Opacity: 1, SidebarWidth: sidebarWidthDefault, FoldLines: foldLinesDefault}
 }
 
 // Preferences is the store of Settings, and applies the ones that reach past the
@@ -163,6 +175,9 @@ func mergeSettings(defaults, stored Settings) Settings {
 	merged.SidebarHidden = stored.SidebarHidden
 	if stored.SidebarWidth != 0 {
 		merged.SidebarWidth = min(max(stored.SidebarWidth, sidebarWidthMin), sidebarWidthMax)
+	}
+	if stored.FoldLines != 0 {
+		merged.FoldLines = min(max(stored.FoldLines, foldLinesMin), foldLinesMax)
 	}
 	for action, accel := range stored.Shortcuts {
 		// A shortcut of an action a version dropped stays out, so that the page
@@ -303,6 +318,21 @@ func (p *Preferences) SetSidebarWidth(width int) error {
 		return nil
 	}
 	p.settings.SidebarWidth = width
+	return p.save()
+}
+
+// SetFoldLines remembers how many lines of a folded block stay on screen.
+func (p *Preferences) SetFoldLines(lines int) error {
+	lines = min(max(lines, foldLinesMin), foldLinesMax)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := p.load(); err != nil {
+		return err
+	}
+	if p.settings.FoldLines == lines {
+		return nil
+	}
+	p.settings.FoldLines = lines
 	return p.save()
 }
 

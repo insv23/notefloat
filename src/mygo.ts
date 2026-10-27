@@ -82,6 +82,12 @@ export interface Settings {
    * window narrow enough that the maximum would leave the note no room.
    */
   sidebarWidth: number;
+  /**
+   * FoldLines is how many rows of a folded block stay on screen. The page
+   * draws a folded block as the note's own text cut at that height, so the
+   * number holds whatever the note wraps to.
+   */
+  foldLines: number;
 }
 
 /**
@@ -122,13 +128,6 @@ export const Notes = {
   /** CreateFolder adds a folder with one empty note in it, and returns it. */
   createFolder(title: string): Promise<Folder> {
     return call("Notes.CreateFolder", title);
-  },
-  /**
-   * DoneBlocks reads which blocks of a note the user finished: one flag per
-   * block, in the note's order.
-   */
-  doneBlocks(id: string): Promise<boolean[]> {
-    return call("Notes.DoneBlocks", id);
   },
   /** Library returns the folders of the app. */
   library(): Promise<Library> {
@@ -201,14 +200,6 @@ export const Notes = {
   search(query: string, caseSensitive: boolean): Promise<SearchHit[]> {
     return call("Notes.Search", query, caseSensitive);
   },
-  /**
-   * SetDoneBlocks remembers which blocks of a note the user finished. A note with
-   * no finished block is forgotten, so that the file does not grow one entry per
-   * note.
-   */
-  setDoneBlocks(id: string, done: boolean[]): Promise<void> {
-    return call("Notes.SetDoneBlocks", id, done);
-  },
   /** SetPinned shows or hides a note in the sidebar's Pinned section. */
   setPinned(id: string, pinned: boolean): Promise<void> {
     return call("Notes.SetPinned", id, pinned);
@@ -247,6 +238,10 @@ export const Preferences = {
   /** RevealDataDir shows the notes in the Finder. */
   revealDataDir(): Promise<void> {
     return call("Preferences.RevealDataDir");
+  },
+  /** SetFoldLines remembers how many lines of a folded block stay on screen. */
+  setFoldLines(lines: number): Promise<void> {
+    return call("Preferences.SetFoldLines", lines);
   },
   /** SetOpacity sets how see-through the panel is, and remembers it. */
   setOpacity(opacity: number): Promise<void> {

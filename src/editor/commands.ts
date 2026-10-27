@@ -3,23 +3,15 @@
 // command here is a change to the document, and the caret follows it. The one
 // rule that is not a key lives here too: a picture's line holds nothing but its
 // path, so an edit that would leave text on it is refused.
-import { Annotation, EditorSelection, type EditorState, type Line, type Text, type Transaction } from "@codemirror/state";
+import { Annotation, EditorSelection, type Line, type Text, type Transaction } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { blockAt, blockNumber, blockRanges, flipTodoCheck, isPicture, isSeparator, lineKind, SEPARATOR } from "./model";
-import { doneOf, setDoneBlocks } from "./widgets";
+import { blockAt, blocks, flipTodoCheck, isPicture, isSeparator, lineKind, separatorMark, SEPARATOR, type Block } from "./model";
 
 /** newBlockText is what goes between two blocks. */
 const NEW_BLOCK = `\n${SEPARATOR}\n`;
 
-/** flagsAround returns the note's finished flags with one block inserted at the
- * index, or taken out of it, so that every flag keeps naming its own block. */
-function flagsAround(state: EditorState, at: number, block: boolean | null): boolean[] {
-  const flags = [...doneOf(state)];
-  while (flags.length < blockRanges(state.doc).length) flags.push(false);
-  if (block === null) flags.splice(at, 1);
-  else flags.splice(at, 0, block);
-  return flags;
-}
+/** markOf is the separator line that closes a block, marks and all. */
+const markOf = (block: Block) => separatorMark({ done: block.done, folded: block.folded });
 
 /** ownEdit marks a change the editor made after checking it itself: a picture's
  * path travels with its block when blocks move, and the filter that keeps a
@@ -27,17 +19,16 @@ function flagsAround(state: EditorState, at: number, block: boolean | null): boo
 const ownEdit = Annotation.define<boolean>();
 
 /** addBlockBelow puts a block under the one the caret is in, as ⌘↵ does. The
- * separator goes at the end of the block's own text, so the new block is the
- * empty line between it and the separator that was already there, and the caret
- * waits in it. */
+ * new block goes under the separator that closes the one above it, so the marks
+ * stay with the block they were written for. */
 export function addBlockBelow(view: EditorView): boolean {
   const { state } = view;
-  const range = blockAt(state.doc, state.selection.main.head);
-  const at = range.to;
+  const block = blockAt(state.doc, state.selection.main.head);
+  const at = block.separator === null ? block.to : state.doc.lineAt(block.separator).to + 1;
+  const caret = block.separator === null ? at + NEW_BLOCK.length : at;
   view.dispatch({
     changes: { from: at, insert: NEW_BLOCK },
-    selection: EditorSelection.cursor(at + NEW_BLOCK.length),
-    effects: setDoneBlocks.of(flagsAround(state, blockNumber(state.doc, range) + 1, false)),
+    selection: EditorSelection.cursor(caret),
     scrollIntoView: true,
   });
   return true;
@@ -48,13 +39,11 @@ export function addBlockBelow(view: EditorView): boolean {
 export function addBlockAbove(view: EditorView): boolean {
   const { state } = view;
   const range = blockAt(state.doc, state.selection.main.head);
-  const index = blockNumber(state.doc, range);
   if (range.from === 0) {
     const insert = `${SEPARATOR}\n`;
     view.dispatch({
       changes: { from: 0, insert },
       selection: EditorSelection.cursor(0),
-      effects: setDoneBlocks.of(flagsAround(state, 0, false)),
       scrollIntoView: true,
     });
     return true;
@@ -62,21 +51,27 @@ export function addBlockAbove(view: EditorView): boolean {
   view.dispatch({
     changes: { from: range.from, insert: NEW_BLOCK },
     selection: EditorSelection.cursor(range.from + 1),
-    effects: setDoneBlocks.of(flagsAround(state, index, false)),
     scrollIntoView: true,
   });
   return true;
 }
 
 /** splitBlock breaks the block at the caret, as ⌥↵ does: what stands after the
- * caret goes to a block of its own under it. */
+ * caret goes to a block of its own under it, and the marks stay with the part
+ * the caret is in. */
 export function splitBlock(view: EditorView): boolean {
   const { state } = view;
   const at = state.selection.main.head;
+  const block = blockAt(state.doc, at);
+  const insert = `\n${markOf(block)}\n`;
+  const changes: { from: number; to?: number; insert: string }[] = [{ from: at, insert }];
+  if (block.separator !== null) {
+    const line = state.doc.lineAt(block.separator);
+    changes.push({ from: line.from, to: line.to, insert: SEPARATOR });
+  }
   view.dispatch({
-    changes: { from: at, insert: NEW_BLOCK },
-    selection: EditorSelection.cursor(at + NEW_BLOCK.length),
-    effects: setDoneBlocks.of(flagsAround(state, blockNumber(state.doc, blockAt(state.doc, at)) + 1, false)),
+    changes,
+    selection: EditorSelection.cursor(at + insert.length),
     scrollIntoView: true,
   });
   return true;
@@ -85,12 +80,12 @@ export function splitBlock(view: EditorView): boolean {
 /** goToBlock moves the caret to the start of the next or previous block. */
 export function goToBlock(view: EditorView, step: -1 | 1): boolean {
   const { state } = view;
-  const ranges = blockRanges(state.doc);
+  const found = blocks(state.doc);
   const head = state.selection.main.head;
-  const index = ranges.findIndex((range) => head >= range.from && head <= range.to);
+  const index = found.findIndex((block) => head >= block.from && head <= block.to);
   const to = index + step;
-  if (index < 0 || to < 0 || to >= ranges.length) return false;
-  view.dispatch({ selection: EditorSelection.cursor(ranges[to]!.from), scrollIntoView: true });
+  if (index < 0 || to < 0 || to >= found.length) return false;
+  view.dispatch({ selection: EditorSelection.cursor(found[to]!.from), scrollIntoView: true });
   return true;
 }
 
@@ -109,31 +104,33 @@ export function selectBlock(view: EditorView): boolean {
   return true;
 }
 
-/** moveBlock swaps the block the caret is in with the one above or below it,
- * and the caret goes along with its block. */
+/** moveBlock swaps the block the caret is in with the one above or below it.
+ * The marks come along: each separator is written again with the marks of the
+ * block it closes, whichever way round the two blocks end up. */
 export function moveBlock(view: EditorView, step: -1 | 1): boolean {
   const { state } = view;
   const head = state.selection.main.head;
-  const ranges = blockRanges(state.doc);
-  const index = ranges.findIndex((range) => head >= range.from && head <= range.to);
+  const found = blocks(state.doc);
+  const index = found.findIndex((block) => head >= block.from && head <= block.to);
   const other = index + step;
-  if (index < 0 || other < 0 || other >= ranges.length) return false;
-  const here = ranges[index]!;
-  const there = ranges[other]!;
-  const hereText = state.doc.sliceString(here.from, here.to);
-  const thereText = state.doc.sliceString(there.from, there.to);
-  const from = Math.min(here.from, there.from);
-  const to = Math.max(here.to, there.to);
-  const insert = step < 0 ? `${hereText}\n${SEPARATOR}\n${thereText}` : `${thereText}\n${SEPARATOR}\n${hereText}`;
-  const start = step < 0 ? there.from : here.from + thereText.length + SEPARATOR.length + 2;
-  // The two blocks swap places, and so do their finish flags.
-  const flags = [...doneOf(state)];
-  while (flags.length < ranges.length) flags.push(false);
-  [flags[index], flags[other]] = [flags[other]!, flags[index]!];
+  if (index < 0 || other < 0 || other >= found.length) return false;
+  const here = found[index]!;
+  const there = found[other]!;
+  const upper = step < 0 ? there : here;
+  const lower = step < 0 ? here : there;
+  const from = upper.from;
+  // The span takes in the separator that closes the lower block, so that both
+  // boundaries come out of the change with the marks their block holds.
+  const to = lower.separator === null ? lower.to : state.doc.lineAt(lower.separator).to;
+  const upperText = state.doc.sliceString(upper.from, upper.to);
+  const lowerText = state.doc.sliceString(lower.from, lower.to);
+  const insert = `${lowerText}\n${markOf(lower)}\n${upperText}\n${markOf(upper)}`;
+  // The caret travels with its block: to the lower block's new start when the
+  // move took it down, and to the top of the span when it went up.
+  const start = step < 0 ? from : from + lowerText.length + 1 + markOf(lower).length + 1;
   view.dispatch({
     changes: { from, to, insert },
     selection: EditorSelection.cursor(start + (head - here.from)),
-    effects: setDoneBlocks.of(flags),
     annotations: ownEdit.of(true),
     scrollIntoView: true,
   });
@@ -177,16 +174,61 @@ export function toggleLineCheck(view: EditorView): boolean {
   return true;
 }
 
+/** setMarks writes what a block is kept as onto the separator that closes it.
+ * The note's last block has no separator, and so nothing to write. */
+function setMarks(view: EditorView, block: Block, marks: { done: boolean; folded: boolean }): boolean {
+  if (block.separator === null) return false;
+  const line = view.state.doc.lineAt(block.separator);
+  view.dispatch({ changes: { from: line.from, to: line.to, insert: separatorMark(marks) } });
+  return true;
+}
+
 /** toggleBlockDone finishes the block the caret is in, as ⌘B does, or opens it
  * again: the block dims as a whole, and its text stays the text it was. */
 export function toggleBlockDone(view: EditorView): boolean {
+  const { doc, selection } = view.state;
+  const block = blockAt(doc, selection.main.head);
+  return setMarks(view, block, { done: !block.done, folded: block.folded });
+}
+
+/** toggleBlockFold folds the block the caret is in away, as ⌘D does, or draws it
+ * whole again. A folded block is the note read back, cut at the fold height: the
+ * mark says folded whatever the block's height, and the height the settings hold
+ * is what decides how much of it is drawn. */
+export function toggleBlockFold(view: EditorView): boolean {
+  const { doc, selection } = view.state;
+  const block = blockAt(doc, selection.main.head);
+  if (block.folded) return setMarks(view, block, { done: block.done, folded: false });
+  if (block.separator === null) return false;
+  const line = doc.lineAt(block.separator);
+  const mark = separatorMark({ done: block.done, folded: true });
+  // A folded block is a reading view: the caret cannot stand in one, so folding
+  // the block the caret is in takes it down to the block below. The selection
+  // names a place in the document the change leaves, so the start of the block
+  // under the rewritten separator is counted from its length.
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: mark },
+    selection: EditorSelection.cursor(line.from + mark.length + 1),
+  });
+  return true;
+}
+
+/** foldAllBlocks folds every block of the note, as ⌘⇧D does, or draws them all
+ * whole again: one folded block anywhere means the press opens the note up. The
+ * block the caret stands in is the one block left drawn whole, because a caret
+ * cannot wait inside a fold. */
+export function foldAllBlocks(view: EditorView): boolean {
   const { state } = view;
-  const index = blockNumber(state.doc, blockAt(state.doc, state.selection.main.head));
-  if (index < 0) return false;
-  const flags = [...doneOf(state)];
-  while (flags.length < blockRanges(state.doc).length) flags.push(false);
-  flags[index] = !flags[index];
-  view.dispatch({ effects: setDoneBlocks.of(flags) });
+  const found = blocks(state.doc);
+  const fold = !found.some((block) => block.folded);
+  const changes = found
+    .filter((block) => block.separator !== null && block.folded !== fold)
+    .map((block) => {
+      const line = state.doc.lineAt(block.separator!);
+      return { from: line.from, to: line.to, insert: separatorMark({ done: block.done, folded: fold }) };
+    });
+  if (changes.length === 0) return true;
+  view.dispatch({ changes });
   return true;
 }
 
@@ -212,10 +254,8 @@ function removeAbove(view: EditorView, line: Line): boolean {
   if (line.from === 0) return true;
   const above = doc.lineAt(line.from - 1);
   if (isSeparator(above.text)) {
-    const index = blockNumber(doc, blockAt(doc, line.from));
     view.dispatch({
       changes: { from: above.from, to: Math.min(doc.length, above.to + 1), insert: "" },
-      effects: setDoneBlocks.of(flagsAround(state, index, null)),
       scrollIntoView: true,
     });
     return true;
@@ -293,21 +333,20 @@ function deleteEmptyBlock(view: EditorView): boolean {
   if (!selection.empty) return false;
   const range = blockAt(state.doc, selection.head);
   if (range.from !== range.to || state.doc.lineAt(range.from).text.trim() !== "") return false;
-  const blocks = blockRanges(state.doc).length;
-  const index = blockNumber(state.doc, range);
-  if (blocks === 1) return false;
-  if (index === blocks - 1) {
+  const found = blocks(state.doc);
+  const index = found.findIndex((block) => block.from === range.from && block.to === range.to);
+  if (found.length === 1) return false;
+  if (index === found.length - 1) {
     const separator = state.doc.lineAt(range.from - 1);
     view.dispatch({ selection: EditorSelection.cursor(separator.from - 1), scrollIntoView: true });
     return true;
   }
-  // The block goes, and so does its finish flag.
+  // The block goes, and the separator that closed it with it.
   const separator = state.doc.lineAt(range.to + 1);
   const to = Math.min(state.doc.length, separator.to + 1);
   view.dispatch({
     changes: { from: range.from, to, insert: "" },
     selection: EditorSelection.cursor(range.from),
-    effects: setDoneBlocks.of(flagsAround(state, index, null)),
     scrollIntoView: true,
   });
   return true;

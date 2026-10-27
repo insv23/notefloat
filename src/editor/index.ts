@@ -11,7 +11,7 @@ import { formatAccel } from "../shortcuts";
 import { clearPicture, picturesKept } from "./commands";
 import { noteKeymap } from "./keymap";
 import { picturePath, tailOf, tailed } from "./model";
-import { doneBlocks, doneFlags, longTokens, noteView, pictureSource } from "./widgets";
+import { blockView, longTokens, noteView, openBlocks, pictureSource, setFilter, setFoldLimit, type BlockFilter } from "./widgets";
 
 export type FindOptions = { caseSensitive: boolean; back: boolean };
 export type FindResult = { total: number; index: number };
@@ -37,6 +37,11 @@ export type NoteEditor = {
   selectionText: () => string;
   /** position is where the caret is, as an offset into the note's text. */
   position: () => number;
+  /** setFoldLimit changes how many lines of a folded block stay in view: the
+   * marks in the note stay as they are, and the blocks fold or open to fit. */
+  setFoldLimit: (limit: number) => void;
+  /** setFilter asks for every block, or only the ones not finished. */
+  setFilter: (filter: BlockFilter) => void;
   destroy: () => void;
 };
 
@@ -46,13 +51,11 @@ export type EditorOptions = {
    * written, so that opening a long note comes back to it rather than to the
    * top. */
   at: number;
-  /** done is which blocks of the note were finished when it was opened, one flag
-   * per block in the note's order. */
-  done: boolean[];
+  /** foldLimit is how many lines of a folded block the note keeps in view when
+   * it opens. */
+  foldLimit: number;
   imagesDir: string;
   onChange: () => void;
-  /** onDone carries the finished blocks back, to be kept with the note. */
-  onDone: (done: boolean[]) => void;
   /** A short word in the title bar, so that what the keyboard did is visible. */
   onStatus?: (text: string) => void;
   /** Stores a pasted picture and returns its path, or null to insert nothing. */
@@ -138,7 +141,7 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     // A picture's line holds nothing but its path, so no edit may leave text on
     // it: the path is what the picture is drawn from.
     EditorState.changeFilter.of(picturesKept),
-    doneBlocks.init((state) => ({ done: options.done, decorations: doneFlags(state.doc, options.done) })),
+    blockView.init((state) => openBlocks(state, options.foldLimit)),
     pictureSource.of({
       url: (path) => imageURL(path),
       whole: (path) => absolute(path, options.imagesDir),
@@ -148,13 +151,25 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     noteKeymap(options.binding),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) options.onChange();
-      // A note whose finished blocks came and went is written again, the note's
-      // text waiting for its own debounce.
-      const before = update.startState.field(doneBlocks).done;
-      const after = update.state.field(doneBlocks).done;
-      if (before !== after) options.onDone(after);
     }),
     EditorView.domEventHandlers({
+      // A press on a folded block opens it, and the press is answered again once
+      // the block is drawn as text: the caret goes where the press was rather
+      // than to the edge of the fold.
+      mousedown(event, view) {
+        const preview = (event.target as HTMLElement | null)?.closest?.(".cm-fold-preview");
+        if (!preview || event.button !== 0) return false;
+        const at = { x: event.clientX, y: event.clientY };
+        requestAnimationFrame(() => {
+          const selection = view.state.selection.main;
+          // A drag has picked its own text by now, and the press is not to be
+          // answered over it.
+          if (!selection.empty) return;
+          const pos = view.posAtCoords(at);
+          if (pos !== null) view.dispatch({ selection: EditorSelection.cursor(pos) });
+        });
+        return false;
+      },
       paste(event, view) {
         const files = [...(event.clipboardData?.files ?? [])].filter((file) => file.type.startsWith("image/"));
         if (files.length === 0) return false;
@@ -313,6 +328,8 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
       return text.includes("\n") ? "" : text;
     },
     position: () => view.state.selection.main.head,
+    setFoldLimit: (limit) => view.dispatch({ effects: setFoldLimit.of(limit) }),
+    setFilter: (filter) => view.dispatch({ effects: setFilter.of(filter) }),
     destroy: () => {
       document.removeEventListener("copy", onCopy, true);
       document.removeEventListener("cut", onCut, true);

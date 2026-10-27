@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -66,9 +67,10 @@ type libraryFileContent struct {
 	// Buffers is the layout of an install from before folders: one flat list of
 	// notes. It is moved into Folders on the first read.
 	Buffers []Buffer `json:"buffers,omitempty"`
-	// Done holds which blocks of a note the user finished, by note ID: one flag
-	// per block, in the note's order. A note without a finished block is left
-	// out, so that a library of untouched notes stays the size of its folders.
+	// Done is what an older version kept here: which blocks of a note the user
+	// finished, by note ID, one flag per block in the note's order. The flags
+	// now live on the separator that closes each block, and this is read once
+	// to put them there; see migrateDone.
 	Done map[string][]bool `json:"done,omitempty"`
 	// Positions holds where the caret was in a note, by note ID, as an offset
 	// into its text. A note read from the top needs no entry.
@@ -132,7 +134,64 @@ func (n *Notes) loadLibrary() error {
 	if err := n.ensureNote(); err != nil {
 		return err
 	}
+	n.migrateDone()
 	return n.saveLibrary()
+}
+
+// migrateDone carries the finish flags of an older library into the notes
+// themselves, where a mark stays with its block whatever happens around it, and
+// then forgets them. A note whose file is gone takes its flags with it.
+func (n *Notes) migrateDone() {
+	if len(n.library.Done) == 0 {
+		return
+	}
+	dir, err := NotesDir()
+	if err != nil {
+		log.Printf("moving the finish marks into the notes: %v", err)
+		return
+	}
+	for id, done := range n.library.Done {
+		path := filepath.Join(dir, id+".txt")
+		body, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			// The note went away; the flags go with it.
+			delete(n.library.Done, id)
+			continue
+		}
+		if err != nil {
+			log.Printf("reading the finish marks of %s: %v", id, err)
+			continue
+		}
+		if text, changed := stampedDone(string(body), done); changed {
+			if err := WriteFileAtomic(path, []byte(text)); err != nil {
+				log.Printf("writing the finish marks of %s: %v", id, err)
+				continue
+			}
+		}
+		delete(n.library.Done, id)
+	}
+	if len(n.library.Done) == 0 {
+		n.library.Done = nil
+	}
+}
+
+// stampedDone puts a block's finish mark on the separator that closes it, by
+// the block's place from the top of the note.
+func stampedDone(text string, done []bool) (string, bool) {
+	lines := strings.Split(text, "\n")
+	changed := false
+	block := 0
+	for number, line := range lines {
+		if !blockSeparator.MatchString(line) {
+			continue
+		}
+		if block < len(done) && done[block] && !strings.Contains(line, "|done") {
+			lines[number] = line + "|done"
+			changed = true
+		}
+		block++
+	}
+	return strings.Join(lines, "\n"), changed
 }
 
 // ensureNote puts an empty note back when the last one went away, so that the
@@ -228,17 +287,6 @@ func (n *Notes) Load(id string) (string, error) {
 	return string(body), nil
 }
 
-// DoneBlocks reads which blocks of a note the user finished: one flag per
-// block, in the note's order.
-func (n *Notes) DoneBlocks(id string) ([]bool, error) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if err := n.loadLibrary(); err != nil {
-		return nil, err
-	}
-	return slices.Clone(n.library.Done[id]), nil
-}
-
 // Position reads where the caret stood in a note the last time it was written,
 // as an offset into its text.
 func (n *Notes) Position(id string) (int, error) {
@@ -248,27 +296,6 @@ func (n *Notes) Position(id string) (int, error) {
 		return 0, err
 	}
 	return n.library.Positions[id], nil
-}
-
-// SetDoneBlocks remembers which blocks of a note the user finished. A note with
-// no finished block is forgotten, so that the file does not grow one entry per
-// note.
-func (n *Notes) SetDoneBlocks(id string, done []bool) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if err := n.loadLibrary(); err != nil {
-		return err
-	}
-	finished := slices.Contains(done, true)
-	if !finished {
-		delete(n.library.Done, id)
-		return n.saveLibrary()
-	}
-	if n.library.Done == nil {
-		n.library.Done = make(map[string][]bool, 1)
-	}
-	n.library.Done[id] = slices.Clone(done)
-	return n.saveLibrary()
 }
 
 // The notes are bound to the page, so every method here is a call the page can
@@ -537,7 +564,6 @@ func (n *Notes) Remove(id string) error {
 	if err := mygo.Shell.TrashItem(filepath.Join(dir, id+".txt")); err != nil {
 		log.Printf("trashing the note %s: %v", id, err)
 	}
-	delete(n.library.Done, id)
 	delete(n.library.Positions, id)
 	return n.saveLibrary()
 }
@@ -602,7 +628,6 @@ func (n *Notes) RemoveFolder(ctx context.Context, id string) error {
 		if err := mygo.Shell.TrashItem(filepath.Join(dir, buffer.ID+".txt")); err != nil {
 			log.Printf("trashing the note %s: %v", buffer.ID, err)
 		}
-		delete(n.library.Done, buffer.ID)
 		delete(n.library.Positions, buffer.ID)
 	}
 	n.library.Folders = slices.Delete(n.library.Folders, fi, fi+1)

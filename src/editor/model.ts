@@ -10,6 +10,23 @@ const SEPARATOR_LINE = /^∞∞∞\S*$/;
 const TODO_LINE = /^(\s*)- \[([ xX])\] ?/;
 const PICTURE_LINE = /^((?:images\/|\/).*\.(?:png|jpe?g|gif|webp|heic))\s*$/;
 
+/** BlockMarks is what a block is kept as beyond its text: the user finished it,
+ * or folded it away. They ride on the separator line that closes the block, as
+ * |done and |folded, which nothing on screen draws. */
+export type BlockMarks = { done: boolean; folded: boolean };
+
+/** marksOf reads the words a separator line carries after its ∞∞∞. */
+function marksOf(text: string): BlockMarks {
+  const words = text.slice(SEPARATOR.length).split("|");
+  return { done: words.includes("done"), folded: words.includes("folded") };
+}
+
+/** separatorMark is a block's marks written as the separator line that closes
+ * it. A block with no mark keeps the bare ∞∞∞ the file has always held. */
+export function separatorMark({ done, folded }: BlockMarks): string {
+  return SEPARATOR + (done ? "|done" : "") + (folded ? "|folded" : "");
+}
+
 export type LineKind =
   | { kind: "separator" }
   | { kind: "picture"; path: string }
@@ -42,31 +59,44 @@ export function picturePath(text: string): string | null {
   return picture ? picture[1]! : null;
 }
 
-export type BlockRange = { from: number; to: number };
+/** Block is one run of lines between separators, with the marks the separator
+ * that closes it carries. The blocks are the note's unit: what is finished,
+ * folded or copied is a whole one. The block the note ends in has no separator
+ * of its own, so it holds no marks and takes none. */
+export type Block = BlockMarks & {
+  from: number;
+  to: number;
+  /** The offset of the line that closes the block, or null for the note's last
+   * block. */
+  separator: number | null;
+};
 
-/** blockRanges are the runs of lines between separators, by character offset.
- * A separator line belongs to neither block. */
-export function blockRanges(doc: Text): BlockRange[] {
-  const ranges: BlockRange[] = [];
+/** blocks reads the note as the blocks it is made of. A separator line belongs
+ * to no block: it is the boundary two blocks meet at, and the only place the
+ * note keeps what became of the block above it. */
+export function blocks(doc: Text): Block[] {
+  const found: Block[] = [];
   let from = 0;
   for (let number = 1; number <= doc.lines; number++) {
     const line = doc.line(number);
     if (!isSeparator(line.text)) continue;
-    ranges.push({ from, to: Math.max(from, line.from - 1) });
+    const to = Math.max(from, line.from - 1);
+    const marks = marksOf(line.text);
+    found.push({ from, to, separator: line.from, ...marks });
     from = Math.min(doc.length, line.to + 1);
   }
-  ranges.push({ from, to: doc.length });
-  return ranges;
+  found.push({ from, to: doc.length, separator: null, done: false, folded: false });
+  return found;
 }
 
 /** blockAt names the block a position sits in. A position before a separator
  * belongs to the block above it. */
-export function blockAt(doc: Text, pos: number): BlockRange {
-  const ranges = blockRanges(doc);
-  for (const range of ranges) {
-    if (pos >= range.from && pos <= range.to) return range;
+export function blockAt(doc: Text, pos: number): Block {
+  const found = blocks(doc);
+  for (const block of found) {
+    if (pos >= block.from && pos <= block.to) return block;
   }
-  return ranges[ranges.length - 1]!;
+  return found[found.length - 1]!;
 }
 
 /** tailOf is what the note still needs to end in an empty block: the separator
@@ -85,9 +115,4 @@ export function tailOf(doc: Text): string {
  * caret can be written in without reaching for a key first. */
 export function tailed(text: string): string {
   return text + tailOf(Text.of(text.split("\n")));
-}
-
-/** blockNumber is the block's place in the note, from 0. */
-export function blockNumber(doc: Text, range: BlockRange): number {
-  return blockRanges(doc).findIndex((other) => other.from === range.from && other.to === range.to);
 }

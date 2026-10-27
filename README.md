@@ -18,10 +18,13 @@ But heynote has two pain points:
 ## What it does
 
 - **Summon and dismiss.** A global shortcut, Option-V by default, changeable in Settings.
-- **Blocks.** One note holds several blocks.
-  - Option-Up and Option-Down move a block, caret included.
+- **Blocks.** One note holds several blocks, with a line of ∞∞∞ between two of them.
+  - Command-Enter adds a block under the current one, Command-Shift-Enter adds one above it, and Option-Enter splits the current block at the caret.
+  - Option-Up and Option-Down move a block, caret included; Command-Up and Command-Down step to the previous and the next block.
   - Command-A selects the block, and pressing it again selects the whole note.
   - Command-B toggles the block's done state, and a finished block turns grey as a whole.
+  - Command-D folds the block the caret is in, and a second press unfolds it; Command-Shift-D folds the whole note, and unfolds all of it again. A folded block is drawn as a read-only reading view cut to the height the settings hold (4 rows by default, 1 to 12 at most), as many rows tall however the window is dragged, whatever number of text lines it holds; a gradient blur sits at its bottom, and a press unfolds it with the caret where the press was.
+  - The funnel at the right of the titlebar switches between showing every block and showing only the blocks not marked done.
 - **Todos.**
   - Command-L turns the line under the caret into a todo, and pressing it again turns it back into plain text.
   - Command-Shift-L toggles that todo line's done state.
@@ -30,18 +33,21 @@ But heynote has two pain points:
   - You can copy the picture's path to hand to an agent.
 - **Folders and pinned notes.**
   - Notes and folders both move by dragging.
-- **Plain text.** Every note is a `.txt` file.
+  - The sidebar's right edge drags to another width.
+- **Plain text.** Every note is a `.txt` file, its blocks separated by a line of `∞∞∞`.
   - A picture is a text line holding its relative path.
+  - A block's done mark and fold mark ride on that separator line as well (`∞∞∞|done`, `∞∞∞|folded`), so a mark travels with its block: moving, splitting, deleting, undoing, or editing the note in another editor all leave it on the block it belongs to.
 - **Local only.**
   - No account, no sync, no network.
   - Data lives in `~/Library/Application Support/Notefloat/` by default, and can be moved to another directory you choose.
   - Pictures are stored as `images/<sha256>.<ext>`, relative to the data directory.
 - **Keyboard first.**
   - Command-N new note, Command-Shift-N new folder, Command-P pin, Command-S sidebar, Command-comma settings.
+  - Command-F finds inside the current note, Command-Shift-F searches every note.
   - Every shortcut can be customized.
 - **Tidy by itself.** A daily sweep moves pictures that no note has referred to for seven days to the Trash.
 
-Settings hold the shortcuts, the panel opacity, the data directory and whether the app opens at login.
+Settings hold the shortcuts, the panel opacity, the fold height, the data directory and whether the app opens at login.
 
 ## Development
 

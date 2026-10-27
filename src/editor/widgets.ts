@@ -4,7 +4,7 @@
 // note file's text, so nothing has to be written back.
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { EditorSelection, Facet, RangeSet, StateEffect, StateField, type EditorState, type Range, type Text } from "@codemirror/state";
-import { blockRanges, flipTodoCheck, lineKind } from "./model";
+import { blocks, flipTodoCheck, lineKind } from "./model";
 
 /** PictureSource turns the path a note holds into what the page loads and what
  * leaves the app when the picture's path is copied. */
@@ -221,50 +221,158 @@ export const longTokens = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
-/** setDoneBlocks replaces which blocks of the note the user finished. */
-export const setDoneBlocks = StateEffect.define<boolean[]>();
+/** setFoldLimit and setFilter carry the reading settings into the note: how many
+ * lines of a folded block stay in view, and whether finished blocks are drawn at
+ * all. */
+export const setFoldLimit = StateEffect.define<number>();
+export const setFilter = StateEffect.define<BlockFilter>();
 
-/** doneFlags draws a finished block dim: every line of it, pictures included.
- * The flags name the blocks by their place in the note, so the whole block fades
- * and the caret still moves line by line. */
-export function doneFlags(doc: Text, done: boolean[]): DecorationSet {
-  const marks: Range<Decoration>[] = [];
-  const ranges = blockRanges(doc);
-  for (let index = 0; index < ranges.length; index++) {
-    if (!done[index]) continue;
-    const range = ranges[index]!;
-    const first = doc.lineAt(range.from).number;
-    const last = doc.lineAt(range.to).number;
-    for (let number = first; number <= last; number++) {
-      marks.push(Decoration.line({ class: "cm-block-done" }).range(doc.line(number).from));
+/** BlockFilter is which blocks the note draws: all of them, or the ones the user
+ * has not finished. */
+export type BlockFilter = "all" | "unfinished";
+
+/** FoldView is a folded block drawn as a reading view of itself: the text of the
+ * block written out the way the note writes it, which the browser lays out and
+ * cuts at the fold height. The browser owns the wrapping, so the block stays as
+ * many rows tall as the setting asks for whatever the window's width. */
+class FoldView extends WidgetType {
+  constructor(
+    readonly text: string,
+    readonly done: boolean,
+    readonly limit: number,
+    readonly source: PictureSource,
+  ) {
+    super();
+  }
+
+  eq(other: FoldView) {
+    return other.text === this.text && other.done === this.done && other.limit === this.limit;
+  }
+
+  toDOM() {
+    const box = document.createElement("div");
+    box.className = this.done ? "cm-fold-preview cm-block-done" : "cm-fold-preview";
+    box.style.setProperty("--fold-lines", String(this.limit));
+    // The words are cut by their own height, and the frost is their sibling: a
+    // mask on the element that holds the words would fall on the frost as well.
+    const words = document.createElement("div");
+    words.className = "cm-fold-words";
+    words.append(...this.rows());
+    box.append(words);
+    return box;
+  }
+
+  /** rows is the block's lines as the note draws them: a todo's box and its
+   * text, a picture, a line of prose, and the breaks between them. */
+  private rows(): (string | HTMLElement)[] {
+    const rows: (string | HTMLElement)[] = [];
+    this.text.split("\n").forEach((text, index) => {
+      if (index > 0) rows.push("\n");
+      const kind = lineKind(text);
+      if (kind.kind === "picture") {
+        const picture = document.createElement("img");
+        picture.className = "cm-picture";
+        picture.src = this.source.url(kind.path);
+        picture.draggable = false;
+        rows.push(picture);
+        return;
+      }
+      if (kind.kind === "todo") {
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.className = "cm-todo-check";
+        box.checked = kind.done;
+        box.tabIndex = -1;
+        rows.push(box, text.slice(kind.prefix));
+        return;
+      }
+      rows.push(text);
+    });
+    return rows;
+  }
+
+  // A press on the block is the editor's own: it puts the caret in the block,
+  // which draws it whole again.
+  ignoreEvent() {
+    return false;
+  }
+}
+
+/** BlockView is what the note's blocks are drawn as now, and the stretches the
+ * caret steps over whole. */
+type BlockView = { limit: number; filter: BlockFilter; decorations: DecorationSet; hidden: DecorationSet };
+
+/** buildBlocks draws the note's blocks from the two marks a block can carry,
+ * which are drawn apart from each other. The filter drops finished blocks; a
+ * folded block is drawn as the reading view of itself; and a finished block is
+ * dim however it is drawn — under a fold or open, the block that is done reads as
+ * done. The one block never drawn by these rules is the block the caret stands
+ * in: no mark and no setting may take the caret's own text away from it. */
+function buildBlocks(state: EditorState, limit: number, filter: BlockFilter): BlockView {
+  const doc = state.doc;
+  const source = state.facet(pictureSource);
+  const all: Range<Decoration>[] = [];
+  const hidden: Range<Decoration>[] = [];
+  /** keepsAway hides a run of whole lines, and keeps the caret out of it. */
+  const keepsAway = (from: number, to: number) => {
+    const away = Decoration.replace({ block: true });
+    all.push(away.range(from, to));
+    hidden.push(away.range(from, to));
+  };
+  /** touched tells whether the caret or a selection reaches into a stretch, which
+   * is what keeps a block from being dropped out from under the caret. */
+  const touched = (from: number, to: number) =>
+    state.selection.ranges.some((range) => range.from <= to && range.to >= from);
+
+  for (const block of blocks(doc)) {
+    const closesAt = block.separator === null ? block.to : doc.lineAt(block.separator).to;
+    // The filter takes a finished block away whole, its hairline included.
+    if (block.done && filter === "unfinished" && !touched(block.from, closesAt)) {
+      keepsAway(block.from, closesAt);
+      continue;
+    }
+    // A folded block is the note read back, and the text under the fold comes
+    // back the moment the caret steps into it.
+    if (block.folded && !touched(block.from, block.to)) {
+      const text = doc.sliceString(block.from, block.to);
+      all.push(Decoration.replace({ block: true, widget: new FoldView(text, block.done, limit, source) }).range(block.from, block.to));
+      continue;
+    }
+    // What is left is the block drawn as the note writes it: folded or open, a
+    // finished block keeps the dim that says so.
+    if (!block.done) continue;
+    for (let number = doc.lineAt(block.from).number; number <= doc.lineAt(block.to).number; number++) {
+      all.push(Decoration.line({ class: "cm-block-done" }).range(doc.line(number).from));
     }
   }
-  return Decoration.set(marks, true);
+  return { limit, filter, decorations: Decoration.set(all, true), hidden: Decoration.set(hidden, true) };
 }
 
-/** DoneView is which blocks are finished and the dimming they draw. */
-type DoneView = { done: boolean[]; decorations: DecorationSet };
+/** openBlocks is the view a note opens with: the fold limit the settings hold,
+ * and every block drawn. */
+export function openBlocks(state: EditorState, limit: number): BlockView {
+  return buildBlocks(state, limit, "all");
+}
 
-/** doneBlocks is the finish state of the note's blocks, one flag per block in
- * the note's order. A note edited outside the app can come back with more or
- * fewer blocks: the flags that still have a block keep their place from the top,
- * and the rest start open. */
-export const doneBlocks = StateField.define<DoneView>({
-  create: () => ({ done: [], decorations: Decoration.none }),
+/** blockView draws the note's blocks as the reading settings say, and re-reads
+ * them from the text on every change: the marks are part of the note, so there is
+ * no second copy of them to keep in step. */
+export const blockView = StateField.define<BlockView>({
+  create: (state) => buildBlocks(state, 4, "all"),
   update(value, transaction) {
-    let flags = value.done;
+    let limit = value.limit;
+    let filter = value.filter;
     for (const effect of transaction.effects) {
-      if (effect.is(setDoneBlocks)) flags = effect.value;
+      if (effect.is(setFoldLimit)) limit = effect.value;
+      else if (effect.is(setFilter)) filter = effect.value;
     }
-    const count = blockRanges(transaction.state.doc).length;
-    if (flags.length !== count) flags = Array.from({ length: count }, (_unused, at) => flags[at] ?? false);
-    if (flags === value.done && !transaction.docChanged) return value;
-    return { done: flags, decorations: doneFlags(transaction.state.doc, flags) };
+    if (!transaction.docChanged && !transaction.selection && limit === value.limit && filter === value.filter) {
+      return value;
+    }
+    return buildBlocks(transaction.state, limit, filter);
   },
-  provide: (field) => EditorView.decorations.from(field, (value) => value.decorations),
+  provide: (field) => [
+    EditorView.decorations.from(field, (value) => value.decorations),
+    EditorView.atomicRanges.of((view) => view.state.field(field).hidden),
+  ],
 });
-
-/** doneOf reads which blocks the state holds as finished. */
-export function doneOf(state: EditorState): boolean[] {
-  return state.field(doneBlocks).done;
-}

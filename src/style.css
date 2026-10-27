@@ -818,9 +818,9 @@ textarea {
 }
 
 /* A finished block fades as a whole: its text greys out and what pictures it
-   holds lose weight, so the block reads as one thing that is done. Nothing in
-   the text marks it: the state is kept beside the note, and ⌘B is what sets
-   it. */
+   holds lose weight, so the block reads as one thing that is done. The mark is
+   the separator that closes the block, so the state travels with the note, and
+   ⌘B is what sets it. */
 .cm-block-done {
   color: var(--muted);
 }
@@ -828,6 +828,65 @@ textarea {
 .cm-block-done .cm-picture,
 .cm-block-done .cm-todo-check {
   opacity: 0.55;
+}
+
+/* A folded block is drawn as a reading view of itself: the note's own lines,
+   which the browser wraps and cuts at the fold height. This is the one height the
+   fold sets, so the block is as many rows tall as the setting says whatever the
+   window's width. The 1.65em is the row the note is set in — the editor's
+   line-height — so a row here is a row there. */
+.cm-fold-preview {
+  position: relative;
+  /* The frost is the box's own drawing and stays inside it, however short the
+     block it was drawn for. */
+  overflow: hidden;
+}
+
+.cm-fold-words {
+  max-height: calc(var(--fold-lines, 4) * 1.65em);
+  overflow: hidden;
+  padding: 7px 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  /* The words here are the fold's own drawing: a drag over them is the editor
+     placing a selection, not the browser picking text out of a widget. */
+  user-select: none;
+  -webkit-user-select: none;
+  /* What a fold keeps says so by thinning out rather than by a line: the last
+     rows fade into the note, and the band below blurs them on the way out. Every
+     folded block wears it, whether its height cut anything away or not. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.4em), rgba(0, 0, 0, 0.2) 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.4em), rgba(0, 0, 0, 0.2) 100%);
+}
+
+.cm-fold-preview::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.4em;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000);
+  mask-image: linear-gradient(to bottom, transparent, #000);
+}
+
+/* The box of a folded todo is the fold's to draw, not the press's: a press lands
+   on the block, and the caret that brings opens the block up. */
+.cm-fold-preview .cm-todo-check {
+  pointer-events: none;
+}
+
+/* The filter over the note's blocks: every block, or only the unfinished ones.
+   The funnel is hollow while nothing is filtered and filled while it is. */
+#block-filter svg path {
+  transition: fill 90ms linear;
+}
+
+#block-filter[aria-pressed="true"] svg path {
+  fill: currentColor;
 }
 
 /* A picture takes its place in the note's flow. The picture is the widget
@@ -1021,6 +1080,15 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* A slider under its label fills the line the label left, with its number at the
+   end: the card is narrow, and a track of a fixed width would sit in the middle
+   of it. */
+.settings-slider-line .slider {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 
 .settings-path {

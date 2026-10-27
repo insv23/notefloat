@@ -24,6 +24,8 @@ const (
 	ActionToggleTodo    = "toggleTodo"
 	ActionToggleLine    = "toggleLineCheck"
 	ActionToggleBlock   = "toggleBlockDone"
+	ActionFoldBlock     = "toggleBlockFold"
+	ActionFoldAllBlocks = "foldAllBlocks"
 	ActionPreviousBlock = "previousBlock"
 	ActionNextBlock     = "nextBlock"
 	ActionSettings      = "settings"
@@ -70,6 +72,8 @@ var shortcutDefs = []ShortcutDef{
 	{Action: ActionToggleTodo, Label: "Toggle Todo Line", Default: "Super+L"},
 	{Action: ActionToggleLine, Label: "Toggle Line Check", Default: "Super+Shift+L"},
 	{Action: ActionToggleBlock, Label: "Toggle Block Done", Default: "Super+B"},
+	{Action: ActionFoldBlock, Label: "Fold/Unfold Block", Default: "Super+D"},
+	{Action: ActionFoldAllBlocks, Label: "Fold/Unfold All Blocks", Default: "Super+Shift+D"},
 	{Action: ActionPreviousBlock, Label: "Previous Block", Default: "Super+Up"},
 	{Action: ActionNextBlock, Label: "Next Block", Default: "Super+Down"},
 	{Action: ActionSettings, Label: "Settings", Default: "Super+,"},
