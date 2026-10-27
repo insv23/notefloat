@@ -174,6 +174,19 @@ the changelog claiming a version the app never had.
 
 ## 发布
 
+Publishing reaches GitHub from a Herdr tab of its own. Create it, run `pxyon` in
+its pane to put the proxy on 127.0.0.1:7897 in force, and run every `git push`
+and `gh release` below there:
+
+    herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label Publish
+
+A shell the agent starts carries no proxy environment, and on this machine
+github.com:443 answers nothing without one: the push waits 75 seconds and fails.
+api.github.com happens to answer over a direct connection, which is why `gh`
+looks fine until it uploads. The one-off way through, when no tab is open:
+
+    git -c http.proxy=http://127.0.0.1:7897 push origin main
+
 A release is a build plus the same files on GitHub, in this order:
 
     # 1. the build and the install, as Running and 版本号 describe
@@ -187,15 +200,26 @@ A release is a build plus the same files on GitHub, in this order:
     #    directory a user downloads into
     cd build/darwin-arm64 && shasum -a 256 Notefloat-<version>-arm64.dmg > SHA256SUMS.txt
 
-    # 4. tag the commit the build came from
+    # 4. push the branch, then tag the commit the build came from
+    git push origin main
     git tag v<version> && git push origin v<version>
 
-    # 5. the release, its disk image and its checksum, with that version's
-    #    changelog section as the notes
+    # 5. that version's changelog section becomes the notes file, and the
+    #    first-launch note below it is appended to that file by hand
+    awk '/^## <version>/{on=1; next} /^## /{on=0} on' CHANGELOG.md > /tmp/notefloat-notes.md
+
+    # 6. the release, its disk image and its checksum
     gh release create v<version> --title "Notefloat <version>" \
-      --notes "$(awk '/^## <version>/{on=1; next} /^## /{on=0} on' CHANGELOG.md)" \
+      --notes-file /tmp/notefloat-notes.md \
       build/darwin-arm64/Notefloat-<version>-arm64.dmg \
       build/darwin-arm64/SHA256SUMS.txt
+
+The disk image is uploaded last and a long upload through the proxy can drop:
+`gh release create` then ends with `Post "https://api.github.com/graphql": EOF`
+and leaves the release in place without its disk image. Uploading it again into
+the release that exists finishes the job:
+
+    gh release upload v<version> build/darwin-arm64/Notefloat-<version>-arm64.dmg
 
 The disk image is signed ad hoc and not notarized, so macOS refuses the first
 launch of a copy that came through a browser. The release notes carry the way
