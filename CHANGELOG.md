@@ -2,6 +2,13 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.6 — 2026-10-28
+
+### Fixed
+
+- Command-Shift-Enter puts the caret in the empty block it has just added above the block the caret was in, ready to type. It used to come to rest on the ∞∞∞ under that block, which read as a jump to the start of the current block, and typing there glued the separator to the block below.
+- On the first block of a note, Command-Shift-Enter now opens a writable empty block at the top as well. It used to add no more than a ∞∞∞ line, with the caret sitting on it and nothing to write in.
+
 ## 0.1.5 — 2026-10-27
 
 ### Added

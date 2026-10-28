@@ -35,22 +35,14 @@ export function addBlockBelow(view: EditorView): boolean {
 }
 
 /** addBlockAbove puts a block over the one the caret is in, as ⌘⇧↵ does, the
- * same way. */
+ * same way. The insert opens with the break that ends the block above, so the
+ * empty block the caret goes into is the line at the block's own start. */
 export function addBlockAbove(view: EditorView): boolean {
   const { state } = view;
   const range = blockAt(state.doc, state.selection.main.head);
-  if (range.from === 0) {
-    const insert = `${SEPARATOR}\n`;
-    view.dispatch({
-      changes: { from: 0, insert },
-      selection: EditorSelection.cursor(0),
-      scrollIntoView: true,
-    });
-    return true;
-  }
   view.dispatch({
     changes: { from: range.from, insert: NEW_BLOCK },
-    selection: EditorSelection.cursor(range.from + 1),
+    selection: EditorSelection.cursor(range.from),
     scrollIntoView: true,
   });
   return true;
