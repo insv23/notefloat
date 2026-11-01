@@ -2,6 +2,12 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.7 — unreleased
+
+### Fixed
+
+- Pasting a picture at the end of the last block cut the picture into a block of its own and dropped the caret into the empty block the note ends in. The picture now stays in the block it was pasted into, the caret rests on the line below it, and the new block comes after that line.
+
 ## 0.1.6 — 2026-10-28
 
 ### Fixed

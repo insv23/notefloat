@@ -87,7 +87,9 @@ const trailingBlock = EditorState.transactionFilter.of((transaction) => {
   if (insert === "") return transaction;
   // The transaction comes first, and the tail is placed in the document it
   // leaves: a sequential spec measures its change in that document rather than
-  // in the one the transaction started from.
+  // in the one the transaction started from. The tail opens with the break that
+  // ends the note's last line, so a caret standing in that line stays on it and
+  // the block the tail writes lands below.
   return [transaction, { changes: { from: transaction.newDoc.length, insert }, sequential: true }];
 });
 

@@ -100,15 +100,20 @@ export function blockAt(doc: Text, pos: number): Block {
 }
 
 /** tailOf is what the note still needs to end in an empty block: the separator
- * under a last block that holds text and the empty line that follows it, the
- * break a note ending in a separator still wants, or nothing at all. The note's
- * tail is a block like any other, written down, not drawn in front of the text. */
+ * that closes a last block holding text and the empty line under it, the break a
+ * note ending in a separator still wants, or nothing when the block the note ends
+ * in is already empty. The tail is written under the note's last line rather than
+ * over it, so an empty line the caret stands in stays where it is and the block
+ * the tail brings appears below that line. */
 export function tailOf(doc: Text): string {
   if (doc.length === 0) return "";
-  const last = doc.line(doc.lines);
-  if (last.text !== "") return isSeparator(last.text) ? "\n" : `\n${SEPARATOR}\n`;
-  const above = doc.lines > 1 ? doc.line(doc.lines - 1).text : "";
-  return isSeparator(above) ? "" : `${SEPARATOR}\n`;
+  if (isSeparator(doc.line(doc.lines).text)) return "\n";
+  const found = blocks(doc);
+  const last = found[found.length - 1]!;
+  for (let number = doc.lineAt(last.from).number; number <= doc.lines; number++) {
+    if (doc.line(number).text.trim() !== "") return `\n${SEPARATOR}\n`;
+  }
+  return "";
 }
 
 /** tailed is a note's text as the editor holds it: ending in the empty block the
