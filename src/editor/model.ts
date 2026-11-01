@@ -89,12 +89,14 @@ export function blocks(doc: Text): Block[] {
   return found;
 }
 
-/** blockAt names the block a position sits in. A position before a separator
- * belongs to the block above it. */
+/** blockAt names the block a position sits in. A position on a separator line
+ * belongs to the block above it: the separator is the boundary that block closes
+ * at, and the marks it carries are that block's. */
 export function blockAt(doc: Text, pos: number): Block {
   const found = blocks(doc);
   for (const block of found) {
-    if (pos >= block.from && pos <= block.to) return block;
+    const end = block.separator === null ? block.to : doc.lineAt(block.separator).to;
+    if (pos >= block.from && pos <= end) return block;
   }
   return found[found.length - 1]!;
 }

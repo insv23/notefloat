@@ -10,7 +10,7 @@ import { absolute, imageURL } from "../paths";
 import { formatAccel } from "../shortcuts";
 import { clearPicture, picturesKept } from "./commands";
 import { noteKeymap } from "./keymap";
-import { picturePath, tailOf, tailed } from "./model";
+import { isSeparator, picturePath, tailOf, tailed } from "./model";
 import { blockView, longTokens, noteView, openBlocks, pictureSource, setFilter, setFoldLimit, type BlockFilter } from "./widgets";
 
 export type FindOptions = { caseSensitive: boolean; back: boolean };
@@ -125,9 +125,21 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
   let searchPos: number | null = null;
   let lastFind = { query: "", caseSensitive: false };
 
-  /** wholePath is what a copy hands out for a picture: the path where it sits
-   * on disk, so that it opens from anywhere. */
-  const wholePath = (text: string) => text.replace(/^images\/[^\n]+$/gm, (line) => absolute(line, options.imagesDir));
+  /** copied turns a stretch of the note into what a copy hands out: the note's
+   * file format is not part of it. A separator line is the hairline two blocks
+   * meet at, so it leaves the blank line that stands between them, and a
+   * picture's line is the whole path where the picture sits, so that the text
+   * pasted elsewhere opens from anywhere. */
+  const copied = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => {
+        if (isSeparator(line)) return "";
+        const path = picturePath(line);
+        return path === null ? line : absolute(path, options.imagesDir);
+      })
+      .join("\n")
+      .replace(/\n+$/, "");
 
   // The note the editor opens is the file's text plus the empty block at its
   // end, so the first thing typed under the last block needs no key of its own.
@@ -221,20 +233,21 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     editor.focus();
   }
 
-  /** copiedText is what ⌘C hands out: the picture's whole path when the caret
-   * stands on one, and the selected text otherwise. */
+  /** copiedText is what a copy hands out: the picture's whole path when the
+   * caret stands on one with nothing selected, and the selected stretch of the
+   * note otherwise, the pictures it reaches included as their whole paths. */
   function copiedText(): { text: string; picture: boolean } | null {
-    const line = view.state.doc.lineAt(view.state.selection.main.head);
-    const path = picturePath(line.text);
-    if (path !== null) return { text: absolute(path, options.imagesDir), picture: true };
     const selection = view.state.selection.main;
-    const text = view.state.sliceDoc(selection.from, selection.to);
-    return text === "" ? null : { text: wholePath(text), picture: false };
+    if (selection.empty) {
+      const path = picturePath(view.state.doc.lineAt(selection.head).text);
+      if (path !== null) return { text: absolute(path, options.imagesDir), picture: true };
+    }
+    const text = copied(view.state.sliceDoc(selection.from, selection.to));
+    return text === "" ? null : { text, picture: false };
   }
 
   // The menu bar owns ⌘C and ⌘X: the page is asked to copy the selection, and
-  // this is where the path of a picture and the whole paths of its block are
-  // filled in.
+  // this is where the note's own format is turned into the text a copy hands out.
   const onCopy = (event: ClipboardEvent) => {
     if (!view.hasFocus) return;
     const copied = copiedText();
@@ -251,9 +264,10 @@ export function createEditor(parent: HTMLElement, options: EditorOptions): NoteE
     event.clipboardData?.setData("text/plain", copied.text);
     event.preventDefault();
     const selection = view.state.selection.main;
-    const line = view.state.doc.lineAt(selection.head);
+    // A picture with nothing selected is cut as the picture: its line is what
+    // goes, rather than the block it sits in.
     if (copied.picture) {
-      clearPicture(view, line);
+      clearPicture(view, view.state.doc.lineAt(selection.head));
       view.focus();
       return;
     }

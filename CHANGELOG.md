@@ -2,11 +2,14 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
-## 0.1.7 — unreleased
+## 0.1.7 — 2026-11-01
 
 ### Fixed
 
 - Pasting a picture at the end of the last block cut the picture into a block of its own and dropped the caret into the empty block the note ends in. The picture now stays in the block it was pasted into, the caret rests on the line below it, and the new block comes after that line.
+- Command-C on a selected block put nothing but the path of the picture in that block on the clipboard, and the block's text was lost. Command-X was worse: it cleared the picture's line alone and left the selected text where it was. A copy is now the selection's own content, a picture among it handed out as its whole path.
+- A selection reaching across blocks carried the ∞∞∞ lines into the copy, marks and all. The blocks are now separated by a blank line, as the note reads on screen.
+- A third Command-A, with the whole note already selected, stepped into the empty block the note ends in. The whole note now stays selected.
 
 ## 0.1.6 — 2026-10-28
 

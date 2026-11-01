@@ -82,10 +82,12 @@ export function goToBlock(view: EditorView, step: -1 | 1): boolean {
 }
 
 /** selectBlock takes the block the caret is in; a second press takes the whole
- * note. The block is the unit a note is written and copied in. */
+ * note, and later presses keep it. The block is the unit a note is written and
+ * copied in. */
 export function selectBlock(view: EditorView): boolean {
   const { state } = view;
   const selection = state.selection.main;
+  if (selection.from === 0 && selection.to === state.doc.length) return true;
   const range = blockAt(state.doc, selection.head);
   const whole = selection.from === range.from && selection.to === range.to;
   if (whole || state.doc.length === 0) {
