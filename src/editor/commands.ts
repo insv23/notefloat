@@ -177,7 +177,7 @@ function setMarks(view: EditorView, block: Block, marks: { done: boolean; folded
   return true;
 }
 
-/** toggleBlockDone finishes the block the caret is in, as ⌘B does, or opens it
+/** toggleBlockDone finishes the block the caret is in, as ⌘D does, or opens it
  * again: the block dims as a whole, and its text stays the text it was. */
 export function toggleBlockDone(view: EditorView): boolean {
   const { doc, selection } = view.state;
@@ -185,7 +185,7 @@ export function toggleBlockDone(view: EditorView): boolean {
   return setMarks(view, block, { done: !block.done, folded: block.folded });
 }
 
-/** toggleBlockFold folds the block the caret is in away, as ⌘D does, or draws it
+/** toggleBlockFold folds the block the caret is in away, as ⌘B does, or draws it
  * whole again. A folded block is the note read back, cut at the fold height: the
  * mark says folded whatever the block's height, and the height the settings hold
  * is what decides how much of it is drawn. */
@@ -207,7 +207,7 @@ export function toggleBlockFold(view: EditorView): boolean {
   return true;
 }
 
-/** foldAllBlocks folds every block of the note, as ⌘⇧D does, or draws them all
+/** foldAllBlocks folds every block of the note, as ⌘⇧B does, or draws them all
  * whole again: one folded block anywhere means the press opens the note up. The
  * block the caret stands in is the one block left drawn whole, because a caret
  * cannot wait inside a fold. */

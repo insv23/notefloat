@@ -22,8 +22,8 @@ But heynote has two pain points:
   - Command-Enter adds a block under the current one, Command-Shift-Enter adds one above it, and Option-Enter splits the current block at the caret.
   - Option-Up and Option-Down move a block, caret included; Command-Up and Command-Down step to the previous and the next block.
   - Command-A selects the block, and pressing it again selects the whole note.
-  - Command-B toggles the block's done state, and a finished block turns grey as a whole.
-  - Command-D folds the block the caret is in, and a second press unfolds it; Command-Shift-D folds the whole note, and unfolds all of it again. A folded block is drawn as a read-only reading view cut to the height the settings hold (4 rows by default, 1 to 12 at most), as many rows tall however the window is dragged, whatever number of text lines it holds; a gradient blur sits at its bottom, and a press unfolds it with the caret where the press was.
+  - Command-D toggles the block's done state, and a finished block turns grey as a whole.
+  - Command-B folds the block the caret is in, and a second press unfolds it; Command-Shift-B folds the whole note, and unfolds all of it again. A folded block is drawn as a read-only reading view cut to the height the settings hold (4 rows by default, 1 to 12 at most), as many rows tall however the window is dragged, whatever number of text lines it holds; a gradient blur sits at its bottom, and a press unfolds it with the caret where the press was.
   - The funnel at the right of the titlebar switches between showing every block and showing only the blocks not marked done.
 - **Todos.**
   - Command-L turns the line under the caret into a todo, and pressing it again turns it back into plain text.

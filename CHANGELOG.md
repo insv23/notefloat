@@ -2,6 +2,12 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.8 — 2026-11-07
+
+### Changed
+
+- Three block shortcuts moved: Command-D toggles the block's done state, Command-B folds the current block, and Command-Shift-B folds the whole note. The letters now name what they do, Done for D and Block for B, and all three sit under the left hand, so the right one stays on the trackpad. Command-B used to mark a block done and Command-D used to fold. Resetting a row in Settings puts that shortcut back on its new default.
+
 ## 0.1.7 — 2026-11-01
 
 ### Fixed

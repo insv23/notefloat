@@ -820,7 +820,7 @@ textarea {
 /* A finished block fades as a whole: its text greys out and what pictures it
    holds lose weight, so the block reads as one thing that is done. The mark is
    the separator that closes the block, so the state travels with the note, and
-   ⌘B is what sets it. */
+   ⌘D is what sets it. */
 .cm-block-done {
   color: var(--muted);
 }
