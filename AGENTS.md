@@ -15,30 +15,31 @@ That runs `mygo dev`, which starts Vite on the dev port, 18731, and launches
 an uncommon number, because 5173 is what every other project's dev server reaches
 for when its author forgets to change it.
 
-### The dev session lives in a Herdr pane this file does not name
+### The dev session lives in a herdr-core terminal this file does not name
 
-Find it rather than assume an ID, because the layout changes between sessions:
+Find it rather than assume an address, because terminals come and go between
+sessions:
 
-    herdr pane list --workspace "$HERDR_WORKSPACE_ID"
+    hc ls
     lsof -nP -iTCP:18731 -sTCP:LISTEN
 
-The dev server is the pane serving port 18731. Read a pane to confirm before
-acting on it:
+The dev server is the terminal named `dev` serving port 18731. Read it to
+confirm before acting on it:
 
-    herdr pane read <pane> --source recent-unwrapped --lines 20
+    hc read dev --lines 20
 
-When no pane serves 18731, create one of your own and start the server there,
-instead of taking over the pane the agent was started in:
+When no terminal serves 18731, start one of your own and put it on screen,
+instead of taking over the terminal the agent was started in:
 
-    herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label dev
-    herdr pane run <returned-pane> "bun run dev"
+    hc run --bg --name dev --no-parent --cwd "$PWD" bun run dev
+    herdr-app do terminal.keep --terminal dev
 
-Once a pane exists, restart it in place instead of starting another one:
+Once it exists, restart it in place instead of starting another one:
 
-    herdr pane send-keys <pane> ctrl+c
+    hc keys dev ctrl+c
     # wait until nothing listens on 18731
-    herdr pane run <pane> "bun run dev"
-    herdr pane read <pane> --source recent-unwrapped --lines 20
+    hc send dev "bun run dev"
+    hc read dev --lines 20
 
 Vite hot-reloads frontend changes and `mygo dev` rebuilds and relaunches the
 app when a Go file changes, so a restart is only for a clean slate: a stuck
@@ -49,8 +50,8 @@ build, a stale global shortcut, or a pane that no longer answers.
   conversation: "build 一下", "build 并装到本地" and the like. Changing files,
   checking them, and watching the dev app is the default; a build is a request
   of its own, never a step of a fix.
-- When the user does ask for a build: stop the dev session first (the pane found
-  above), then raise the patch number in `mygo.config.ts` and draft that version's
+- When the user does ask for a build: stop the dev session first (the terminal
+  found above), then raise the patch number in `mygo.config.ts` and draft that version's
   section in `CHANGELOG_zh.md` — see 版本号 and 中英文档成对 — wait for the user to
   review it, translate it into `CHANGELOG.md`, and run `bun run build`, which
   writes `build/darwin-arm64/Notefloat.app`. A build is not finished until that
@@ -62,7 +63,7 @@ build, a stale global shortcut, or a pane that no longer answers.
 - Never start a second `bun run dev`: the two dev servers fight over the dev
   port and the two apps fight over the global shortcut.
 - Never kill the user's dev session on your own account. A build stops it the
-  documented way, in that pane. Restarting it afterwards is a fresh decision,
+  documented way, in that terminal. Restarting it afterwards is a fresh decision,
   not part of the build.
 - `build/` and `dist/` are build output: they appear after a build the user asked
   for, and are removed once the app is installed in `/Applications`, unless the
@@ -174,11 +175,16 @@ the changelog claiming a version the app never had.
 
 ## 发布
 
-Publishing reaches GitHub from a Herdr tab of its own. Create it, run `pxyon` in
-its pane to put the proxy on 127.0.0.1:7897 in force, and run every `git push`
+Publishing reaches GitHub from a terminal of its own. Start it, run `pxyon` in
+it to put the proxy on 127.0.0.1:7897 in force, and run every `git push`
 and `gh release` below there:
 
-    herdr tab create --workspace "$HERDR_WORKSPACE_ID" --cwd "$PWD" --label Publish
+    hc run --bg --name Publish --no-parent --cwd "$PWD"
+    herdr-app do terminal.keep --terminal Publish
+    hc send Publish "pxyon"
+
+`hc send` pastes and presses Enter, so every command further down goes in the
+same way: `hc send Publish "git push origin main"`.
 
 A shell the agent starts carries no proxy environment, and on this machine
 github.com:443 answers nothing without one: the push waits 75 seconds and fails.
