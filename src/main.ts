@@ -8,6 +8,7 @@ import { createEditor, type NoteEditor } from "./editor/index";
 import { imeBusy, watchComposition } from "./ime";
 import { createLibrary } from "./library";
 import { createSaver } from "./save";
+import { watchScrollbars } from "./scrollbars";
 import { createFindBar, createNoteSearch, type FindBar, type NoteSearch } from "./search";
 import { formatAccel } from "./shortcuts";
 import { createSettings, type SettingsUI } from "./settings";
@@ -403,6 +404,7 @@ events.openSettings.on(() => openSettings());
 
 async function boot() {
   watchComposition();
+  watchScrollbars();
   setupSidebarResizer();
   const [, stored] = await Promise.all([library.load(), Preferences.get()]);
   settings = stored;

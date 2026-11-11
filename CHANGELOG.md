@@ -2,6 +2,16 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.9 — 2026-11-11
+
+### Fixed
+
+- The scrollbar appears only while the panel scrolls: the sidebar, the search results, the settings panel and the editor alike draw a thin bar as they move and fade it out within a second of stopping, at the pace of the system's overlay bar. That thin bar used to sit beside the content for good and hold 6px of it; the width now goes back to the text.
+
+### Changed
+
+- The scrollbar's thumb can no longer be dragged. It only says how far into the content you are; the wheel, the trackpad, the keyboard and the arrow keys scroll as before. The 6px thumb used to be draggable with the mouse.
+
 ## 0.1.8 — 2026-11-07
 
 ### Changed

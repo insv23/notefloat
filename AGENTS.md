@@ -110,6 +110,8 @@ The page is `src/`, and the editor is CodeMirror 6:
 - `src/library.ts` — the library the sidebar draws: every write goes through it
   and reloads what it hands back.
 - `src/save.ts` — the debounced write of the note on screen.
+- `src/scrollbars.ts` — the 6px thumb that appears while the user scrolls, drawn
+  by hand because WebKit does not restyle `::-webkit-scrollbar` as the page moves.
 - `src/bindings.ts` — the page's shortcuts, matched against the settings.
 - `src/sidebar.ts` — Pinned section, folders, notes, drag and drop.
 - `src/search.ts` — the find bar under the title, and the dialog over the panel

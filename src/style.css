@@ -56,31 +56,38 @@ textarea {
   position: relative;
 }
 
-/* Every scroller in the panel draws its own scrollbar, thin, with no track and
-   none of the buttons macOS puts at the ends: the system one is as wide as the
-   user's setting says, and a note panel has no room for it. Width zero takes it
-   away whole, and the trackpad still scrolls. */
-* {
-  scrollbar-width: thin;
-}
-
+/* The scrollbar is drawn by scrollbars.ts and the native one is taken away
+   whole: macOS sets its width from the user's setting, and a note panel has no
+   room for it, while ::-webkit-scrollbar would put a bar of ours in the layout
+   that WebKit does not restyle while the page scrolls. Hidden this way, neither
+   takes any space, and the trackpad, wheel and keys still scroll. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none;
 }
 
-::-webkit-scrollbar-thumb {
+/* The layer the drawn thumbs sit in: fixed over the panel, never in the way of
+   a click, and above every panel because a thumb belongs to whichever scroller
+   is moving, dialog or not. */
+.scrollbar-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px; /* matches THUMB_WIDTH in scrollbars.ts */
   border-radius: 3px;
   background: color-mix(in srgb, var(--fg) 20%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
 }
 
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-::-webkit-scrollbar-button {
-  display: none;
+.scrollbar-thumb.is-visible {
+  opacity: 1;
 }
 
 /* ---- sidebar ---- */
