@@ -181,12 +181,19 @@ Publishing reaches GitHub from a terminal of its own. Start it, run `pxyon` in
 it to put the proxy on 127.0.0.1:7897 in force, and run every `git push`
 and `gh release` below there:
 
-    hc run --bg --name Publish --no-parent --cwd "$PWD"
-    herdr-app do terminal.keep --terminal Publish
-    hc send Publish "pxyon"
+    hc run --bg --name publish --no-parent --cwd "$PWD"
+    herdr-app do terminal.keep --terminal <the address hc ls gives it>
+    hc send publish "pxyon"
 
 `hc send` pastes and presses Enter, so every command further down goes in the
-same way: `hc send Publish "git push origin main"`.
+same way: `hc send publish "git push origin main"`.
+
+A terminal's name is not its address. `hc run --name` takes 1 to 32 lowercase
+letters, digits, `-`, `_` and `.`, so `Publish` is refused outright; and
+`terminal.keep` looks the terminal up by the address `hc ls` prints, not by its
+name, so passing the name answers `no running terminal`, and a terminal started
+with `--no-parent` stays in herdr-core with no pane on screen until it is given
+one.
 
 A shell the agent starts carries no proxy environment, and on this machine
 github.com:443 answers nothing without one: the push waits 75 seconds and fails.
@@ -228,6 +235,11 @@ and leaves the release in place without its disk image. Uploading it again into
 the release that exists finishes the job:
 
     gh release upload v<version> build/darwin-arm64/Notefloat-<version>-arm64.dmg
+
+One release, one terminal: once the release answers with its URL, close its tab,
+so the next release starts a fresh one and no idle shell keeps a proxy alive:
+
+    herdr-app do tab.close --id <the tab id herdr-app ls prints for publish> --confirmed true
 
 The disk image is signed ad hoc and not notarized, so macOS refuses the first
 launch of a copy that came through a browser. The release notes carry the way
