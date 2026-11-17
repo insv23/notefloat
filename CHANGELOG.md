@@ -2,6 +2,14 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.10 — 2026-11-17
+
+### Fixed
+
+- Renaming a note in the title bar renames that note: the one above it in the sidebar no longer takes the new name as well. The title used to be written into an earlier note, so the change looked like it landed on someone else while the note you were editing looked like it never saved.
+- Pinning, drag-reordering or renaming a folder right after editing a title no longer puts the old title back in the sidebar. Every write now lands the note on screen before the library is read again.
+- Command-N puts the new note in the folder of the note on screen. It used to follow the note that was open the last time the library was read, and could land in another folder.
+
 ## 0.1.9 — 2026-11-11
 
 ### Fixed

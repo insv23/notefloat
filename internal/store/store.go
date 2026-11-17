@@ -52,11 +52,11 @@ type Folder struct {
 	Buffers []Buffer `json:"buffers"`
 }
 
-// Library is what the page needs to draw the sidebar: the folders, which note
-// was open, and where the notes and pictures live.
+// Library is what the page needs to draw the sidebar: the folders and where the
+// notes and pictures live. Which note is open is the page's to hold; the store
+// only remembers it for the next launch, through LastOpen.
 type Library struct {
 	Folders   []Folder `json:"folders"`
-	Active    string   `json:"active"`
 	DataDir   string   `json:"dataDir"`
 	ImagesDir string   `json:"imagesDir"`
 }
@@ -128,11 +128,13 @@ func (n *Notes) loadLibrary() error {
 		n.library.Folders = []Folder{folder}
 		n.library.Active = buffer.ID
 	}
-	if n.library.Active == "" {
-		n.library.Active = n.firstNote()
-	}
 	if err := n.ensureNote(); err != nil {
 		return err
+	}
+	// LastOpen promises a note that exists: a library whose open note went away
+	// opens the first one instead.
+	if _, _, ok := n.locate(n.library.Active); !ok {
+		n.library.Active = n.firstNote()
 	}
 	n.migrateDone()
 	return n.saveLibrary()
@@ -263,7 +265,6 @@ func (n *Notes) Library() (Library, error) {
 	}
 	return Library{
 		Folders:   folders,
-		Active:    n.library.Active,
 		DataDir:   root,
 		ImagesDir: filepath.Join(root, ImagesDirName),
 	}, nil
@@ -649,6 +650,18 @@ func (n *Notes) Activate(id string) error {
 	}
 	n.library.Active = id
 	return n.saveLibrary()
+}
+
+// LastOpen answers which note to show when the page has none of its own: at
+// startup, and after the note it held went to the Trash. The note always
+// exists; loadLibrary makes sure of it.
+func (n *Notes) LastOpen() (string, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if err := n.loadLibrary(); err != nil {
+		return "", err
+	}
+	return n.library.Active, nil
 }
 
 func newID() string {

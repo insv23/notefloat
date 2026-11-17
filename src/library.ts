@@ -1,7 +1,8 @@
-// The library the sidebar draws: the folders, their notes, and which note is
-// open. Every write goes through this store, which reloads the library from Go
-// afterwards and tells the page, so that no caller keeps a stale copy or
-// forgets to draw the sidebar again.
+// The library the sidebar draws: the folders and their notes. Every write goes
+// through this store, which reloads the library from Go afterwards and tells the
+// page, so that no caller keeps a stale copy or forgets to draw the sidebar
+// again. Which note is open is not here: that is the page's, and Go only
+// remembers it for the next launch.
 import { Notes, type Buffer, type Library } from "./mygo";
 
 export type Found = { folderIndex: number; buffer: Buffer };
@@ -14,9 +15,6 @@ export type LibraryStore = {
   /** mutate runs a write through Go and reloads the library after it. */
   mutate: <T>(run: () => Promise<T>) => Promise<T>;
   find: (id: string) => Found | null;
-  active: () => Buffer | undefined;
-  titleOf: (id: string) => string;
-  folderOfActive: () => string;
   subscribe: (listener: (library: Library) => void) => void;
 };
 
@@ -53,12 +51,6 @@ export function createLibrary(): LibraryStore {
       return result;
     },
     find,
-    active: () => find(state().active)?.buffer,
-    titleOf: (id) => find(id)?.buffer.title ?? "Untitled",
-    folderOfActive: () => {
-      const found = find(state().active);
-      return found ? state().folders[found.folderIndex]!.id : (state().folders[0]?.id ?? "");
-    },
     subscribe: (listener) => {
       listeners.push(listener);
     },

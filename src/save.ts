@@ -9,8 +9,6 @@ export type Saver = {
   schedule: () => void;
   /** flush writes now, and cancels the scheduled write. */
   flush: () => Promise<void>;
-  /** cancel drops the scheduled write: the note it would write is gone. */
-  cancel: () => void;
 };
 
 export function createSaver(write: () => Promise<void>): Saver {
@@ -30,6 +28,5 @@ export function createSaver(write: () => Promise<void>): Saver {
       cancel();
       await write();
     },
-    cancel,
   };
 }

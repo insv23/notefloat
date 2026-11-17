@@ -40,22 +40,22 @@ const bindings = createBindings();
 
 let settings: Settings;
 let settingsUI: SettingsUI;
-let activeId = "";
+/** openId is the note the editor holds: the page's one pointer at it. Go keeps
+ * a copy only so that the next launch can open the same note. */
+let openId = "";
 let view: NoteEditor | null = null;
 let findBar: FindBar;
 let noteSearch: NoteSearch;
 
-const activeNote = () => library.active();
-
 /** save writes the note on screen: the text the editor holds and the title. */
 const save = createSaver(async () => {
-  if (!view || !activeId) return;
+  if (!view || !openId) return;
   // The caret goes with the text: the note opens again where it was left.
-  await Notes.save(activeId, titleEl.value, view.text(), view.position());
+  await Notes.save(openId, titleEl.value, view.text(), view.position());
 });
 
 function renderSidebarNow() {
-  renderSidebar({ pinned: pinnedEl, folders: foldersEl }, library.state(), activeId, {
+  renderSidebar({ pinned: pinnedEl, folders: foldersEl }, library.state(), openId, {
     openNote: (id) => void openNote(id),
     newNote: (folderID) => void addNote(folderID),
     newFolder: () => void addFolder(),
@@ -200,9 +200,9 @@ function applySettings(next: Settings) {
 async function openNote(id: string) {
   await save.flush();
   const [text, at] = await Promise.all([Notes.load(id), Notes.position(id)]);
-  activeId = id;
+  openId = id;
   await Notes.activate(id);
-  titleEl.value = library.titleOf(id);
+  titleEl.value = library.find(id)?.buffer.title ?? "Untitled";
   view?.destroy();
   view = createEditor(editorHost, {
     doc: text,
@@ -236,27 +236,34 @@ async function saveImage(file: File): Promise<string | null> {
   return Images.save(toBase64(bytes));
 }
 
-async function addNote(folderID = library.folderOfActive()) {
+async function addNote(folderID?: string) {
   await save.flush();
-  const note = await library.mutate(() => Notes.create(folderID, "Untitled"));
+  // A note the folder's own + did not place joins the folder of the note on
+  // screen, or the first folder when there is none.
+  const folderIndex = library.find(openId)?.folderIndex ?? 0;
+  const folder = folderID ?? library.state().folders[folderIndex]?.id ?? "";
+  const note = await library.mutate(() => Notes.create(folder, "Untitled"));
   await openNote(note.id);
 }
 
 async function addFolder() {
   await save.flush();
   const folder = await library.mutate(() => Notes.createFolder("New Folder"));
-  await openNote(folder.buffers[0]?.id ?? library.state().active);
+  // The store puts one note in the folder it makes, so there is always a note
+  // to show.
+  await openNote(folder.buffers[0]!.id);
 }
 
 async function deleteNote(id: string) {
   await save.flush();
   // The note is going: an editor left in place would write its file back.
-  if (id === activeId) {
+  if (id === openId) {
     view?.destroy();
     view = null;
   }
   await library.mutate(() => Notes.remove(id));
-  if (library.state().active !== activeId) await openNote(library.state().active);
+  // The store picked the note to show next, and the page has none to keep.
+  if (id === openId) await openNote(await Notes.lastOpen());
 }
 
 async function deleteFolder(id: string) {
@@ -268,15 +275,16 @@ async function deleteFolder(id: string) {
     if (err instanceof Error && err.message) flash(err.message);
     return;
   }
-  if (library.find(activeId)) return;
+  if (library.find(openId)) return;
   // The note being edited went to the Trash with the folder: saving it on the
   // way to the next one would write its file back.
   view?.destroy();
   view = null;
-  await openNote(library.state().active);
+  await openNote(await Notes.lastOpen());
 }
 
 async function renameFolder(id: string, title: string) {
+  await save.flush();
   await library.mutate(() => Notes.renameFolder(id, title));
 }
 
@@ -286,6 +294,7 @@ async function moveNote(id: string, folderID: string, index: number) {
 }
 
 async function reorderFolders(ids: string[]) {
+  await save.flush();
   await library.mutate(() => Notes.reorderFolders(ids));
 }
 
@@ -293,6 +302,7 @@ async function togglePin(id: string) {
   const note = library.find(id)?.buffer;
   if (!note) return;
   const pinned = !note.pinned;
+  await save.flush();
   await library.mutate(() => Notes.setPinned(id, pinned));
   flash(pinned ? "Pinned" : "Unpinned");
 }
@@ -312,7 +322,7 @@ function runAction(action: string) {
       void addFolder();
       break;
     case "pinNote":
-      void togglePin(activeId);
+      void togglePin(openId);
       break;
     case "settings":
       openSettings();
@@ -349,7 +359,7 @@ async function openHit(hit: SearchHit, query: string, caseSensitive: boolean) {
 }
 
 titleEl.addEventListener("input", () => {
-  const note = activeNote();
+  const note = library.find(openId)?.buffer;
   if (note) note.title = titleEl.value;
   renderSidebarNow();
   save.schedule();
@@ -435,7 +445,7 @@ async function boot() {
   applySidebar();
   renderChrome();
   renderSidebarNow();
-  await openNote(library.state().active);
+  await openNote(await Notes.lastOpen());
 }
 
 void boot();

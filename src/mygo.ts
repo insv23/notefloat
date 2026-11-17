@@ -33,12 +33,12 @@ export interface Folder {
 }
 
 /**
- * Library is what the page needs to draw the sidebar: the folders, which note
- * was open, and where the notes and pictures live.
+ * Library is what the page needs to draw the sidebar: the folders and where the
+ * notes and pictures live. Which note is open is the page's to hold; the store
+ * only remembers it for the next launch, through LastOpen.
  */
 export interface Library {
   folders: Folder[];
-  active: string;
   dataDir: string;
   imagesDir: string;
 }
@@ -128,6 +128,14 @@ export const Notes = {
   /** CreateFolder adds a folder with one empty note in it, and returns it. */
   createFolder(title: string): Promise<Folder> {
     return call("Notes.CreateFolder", title);
+  },
+  /**
+   * LastOpen answers which note to show when the page has none of its own: at
+   * startup, and after the note it held went to the Trash. The note always
+   * exists; loadLibrary makes sure of it.
+   */
+  lastOpen(): Promise<string> {
+    return call("Notes.LastOpen");
   },
   /** Library returns the folders of the app. */
   library(): Promise<Library> {
