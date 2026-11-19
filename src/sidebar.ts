@@ -11,6 +11,7 @@ export interface SidebarActions {
   deleteNote(id: string): void;
   deleteFolder(id: string): void;
   renameFolder(id: string, title: string): void;
+  toggleFolder(id: string, collapsed: boolean): void;
   togglePin(id: string): void;
   moveNote(id: string, folderID: string, index: number): void;
   reorderFolders(ids: string[]): void;
@@ -24,6 +25,15 @@ export interface SidebarHosts {
 /** drag is what the user picked up, and stays unset unless a drag started in
  * this window: a drag from another app carries no folder or note of ours. */
 let drag: { kind: "note" | "folder"; id: string } | null = null;
+
+/** pendingRename names the folder whose title opens for editing the next time
+ * the sidebar is drawn: a folder the user just made has no name of theirs yet. */
+let pendingRename: string | null = null;
+
+/** renameNext asks for a folder's name to open for editing on the next draw. */
+export function renameNext(folderID: string) {
+  pendingRename = folderID;
+}
 
 function clearDropMarks(root: HTMLElement) {
   for (const el of root.querySelectorAll(".drop-before, .drop-after, .drop-into")) {
@@ -72,15 +82,33 @@ function pinMark(pinned: boolean): SVGSVGElement {
   return svg;
 }
 
-/** folderGlyph is the mark of a folder's name. */
-function folderGlyph(): SVGSVGElement {
+const FOLDER_OPEN_PATH =
+  "m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2";
+
+/** The open folder is Lucide's folder-open, drawn on a 24 grid and scaled into
+ * this one, so both states sit in the box the name starts beside. */
+const FOLDER_OPEN_TRANSFORM = "translate(0.81 1.215) scale(0.595)";
+
+/** folderGlyph is the mark of a folder's name: the folder stands open while its
+ * notes are shown, and closes over them once they are folded away. */
+function folderGlyph(collapsed: boolean): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("class", "folder-glyph");
   svg.setAttribute("aria-hidden", "true");
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", FOLDER_PATH);
-  svg.append(path);
+  if (collapsed) {
+    path.setAttribute("d", FOLDER_PATH);
+    svg.append(path);
+    return svg;
+  }
+  const scaled = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  scaled.setAttribute("transform", FOLDER_OPEN_TRANSFORM);
+  path.setAttribute("d", FOLDER_OPEN_PATH);
+  // The group shrinks what it holds, the stroke with it: this lands at 1.5.
+  path.setAttribute("stroke-width", "2.52");
+  scaled.append(path);
+  svg.append(scaled);
   return svg;
 }
 
@@ -179,15 +207,23 @@ function noteList(folder: Folder, active: string, actions: SidebarActions): HTML
 }
 
 /** rename puts an input over the folder's name and calls back with the new
- * title when the user commits it. */
-function rename(span: HTMLElement, title: string, commit: (title: string) => void) {
+ * title when the user commits it. The title is selected whole unless the folder
+ * is one the user just made. */
+function rename(span: HTMLElement, title: string, commit: (title: string) => void, selectAll = true) {
   const input = document.createElement("input");
   input.className = "folder-rename";
   input.value = title;
   input.spellcheck = false;
   span.replaceWith(input);
   input.focus();
-  input.select();
+  if (selectAll) {
+    input.select();
+  } else {
+    // A folder the user just made: the caret goes after the placeholder, so a
+    // keystroke appends to it and backspace takes it away letter by letter.
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  }
   let done = false;
   const finish = (value: string | null) => {
     if (done) return;
@@ -212,7 +248,7 @@ function rename(span: HTMLElement, title: string, commit: (title: string) => voi
 
 function folderItem(folder: Folder, library: Library, active: string, host: HTMLElement, actions: SidebarActions): HTMLLIElement {
   const item = document.createElement("li");
-  item.className = "folder";
+  item.className = "folder" + (folder.collapsed ? " collapsed" : "");
   item.dataset.folderId = folder.id;
 
   const head = document.createElement("div");
@@ -223,10 +259,21 @@ function folderItem(folder: Folder, library: Library, active: string, host: HTML
   name.className = "folder-name";
   name.textContent = folder.title;
   name.title = "Double-click to rename";
+  const commit = (title: string) => actions.renameFolder(folder.id, title);
   name.addEventListener("dblclick", (event) => {
     event.stopPropagation();
-    rename(name, folder.title, (title) => actions.renameFolder(folder.id, title));
+    rename(name, folder.title, commit);
   });
+
+  if (pendingRename === folder.id) {
+    pendingRename = null;
+    // The row is drawn detached, so the editor waits until it is in the page.
+    queueMicrotask(() => {
+      if (!name.isConnected) return;
+      name.scrollIntoView({ block: "nearest" });
+      rename(name, folder.title, commit, false);
+    });
+  }
 
   const buttons = document.createElement("div");
   buttons.className = "folder-actions";
@@ -235,7 +282,32 @@ function folderItem(folder: Folder, library: Library, active: string, host: HTML
     buttons.append(iconButton("×", "Delete Folder", () => actions.deleteFolder(folder.id)));
   }
 
-  head.append(folderGlyph(), name, buttons);
+  // The mark alone folds the folder, and only it is redrawn: the name keeps its
+  // node, so the double-click that renames it is never interrupted by a click on
+  // the row. The mark is drawn at 14px and sits in a button with room around it.
+  let mark = folderGlyph(folder.collapsed ?? false);
+  const toggle = document.createElement("button");
+  toggle.className = "folder-toggle";
+  toggle.append(mark);
+  const sayState = () => {
+    const folded = item.classList.contains("collapsed");
+    toggle.title = folded ? "Expand Folder" : "Collapse Folder";
+    toggle.setAttribute("aria-label", toggle.title);
+    toggle.setAttribute("aria-expanded", String(!folded));
+  };
+  sayState();
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const collapsed = !item.classList.contains("collapsed");
+    item.classList.toggle("collapsed", collapsed);
+    const next = folderGlyph(collapsed);
+    mark.replaceWith(next);
+    mark = next;
+    sayState();
+    actions.toggleFolder(folder.id, collapsed);
+  });
+
+  head.append(toggle, name, buttons);
 
   head.addEventListener("dragstart", (event) => {
     drag = { kind: "folder", id: folder.id };

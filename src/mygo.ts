@@ -30,6 +30,11 @@ export interface Folder {
   id: string;
   title: string;
   buffers: Buffer[];
+  /**
+   * Collapsed folders show only their name in the sidebar. The notes are still
+   * there, and the folder keeps them folded across launches.
+   */
+  collapsed?: boolean;
 }
 
 /**
@@ -125,7 +130,10 @@ export const Notes = {
   create(folderID: string, title: string): Promise<Buffer> {
     return call("Notes.Create", folderID, title);
   },
-  /** CreateFolder adds a folder with one empty note in it, and returns it. */
+  /**
+   * CreateFolder adds an empty folder and returns it. The notes it holds come
+   * later, from the folder's own new-note button.
+   */
   createFolder(title: string): Promise<Folder> {
     return call("Notes.CreateFolder", title);
   },
@@ -207,6 +215,10 @@ export const Notes = {
    */
   search(query: string, caseSensitive: boolean): Promise<SearchHit[]> {
     return call("Notes.Search", query, caseSensitive);
+  },
+  /** SetCollapsed folds a folder's notes away in the sidebar, or shows them again. */
+  setCollapsed(id: string, collapsed: boolean): Promise<void> {
+    return call("Notes.SetCollapsed", id, collapsed);
   },
   /** SetPinned shows or hides a note in the sidebar's Pinned section. */
   setPinned(id: string, pinned: boolean): Promise<void> {

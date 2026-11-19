@@ -14,6 +14,10 @@ export type LibraryStore = {
   reload: () => Promise<Library>;
   /** mutate runs a write through Go and reloads the library after it. */
   mutate: <T>(run: () => Promise<T>) => Promise<T>;
+  /** setCollapsed records a folder's folded state in the copy on hand without
+   * reloading it: a reload redraws the sidebar and takes the row out from under
+   * the click that folded it. Go holds the state; the next reload reads it. */
+  setCollapsed: (id: string, collapsed: boolean) => void;
   find: (id: string) => Found | null;
   subscribe: (listener: (library: Library) => void) => void;
 };
@@ -41,6 +45,11 @@ export function createLibrary(): LibraryStore {
     return null;
   }
 
+  function setCollapsed(id: string, collapsed: boolean) {
+    const folder = library?.folders.find((folder) => folder.id === id);
+    if (folder) folder.collapsed = collapsed;
+  }
+
   return {
     state,
     load: reload,
@@ -51,6 +60,7 @@ export function createLibrary(): LibraryStore {
       return result;
     },
     find,
+    setCollapsed,
     subscribe: (listener) => {
       listeners.push(listener);
     },

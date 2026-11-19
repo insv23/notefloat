@@ -2,6 +2,23 @@
 
 One section per build, newest first. The section lands together with the patch number in `mygo.config.ts`, so the two always agree: see 版本号 in AGENTS.md.
 
+## 0.1.11 — 2026-11-19
+
+### Added
+
+- Folders fold. The mark left of a folder's name folds its notes away and opens them again. The mark is the state itself: an open folder while its notes show, a closed one once they are folded. The folded state lives in `library.json`, so it survives quitting the app and moving the notes to another directory.
+
+### Changed
+
+- A new folder no longer comes with an Untitled note in it. The folder is empty, it shows up in the sidebar right away, and its name opens for editing with the caret at the end: type your own, or press Return to keep New Folder. The note on screen stays where it is.
+- The New Folder button at the top of the sidebar is now a folder with a plus in its bottom-right corner, so it reads apart from the lone plus beside it.
+- The Pinned section carries a pin mark now, in the same column as the folder marks. The section's text, the folder names and the note titles all start on one line.
+- Folding a folder is the mark's job alone. Clicking the name or the empty part of the row no longer folds it, and the name still renames on a double-click.
+
+### Fixed
+
+- Deleting a folder that holds no notes asks in words that fit, instead of reading "0 notes and the folder go to the Trash."
+
 ## 0.1.10 — 2026-11-17
 
 ### Fixed

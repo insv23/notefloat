@@ -12,7 +12,7 @@ import { watchScrollbars } from "./scrollbars";
 import { createFindBar, createNoteSearch, type FindBar, type NoteSearch } from "./search";
 import { formatAccel } from "./shortcuts";
 import { createSettings, type SettingsUI } from "./settings";
-import { renderSidebar } from "./sidebar";
+import { renderSidebar, renameNext } from "./sidebar";
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 
@@ -62,6 +62,7 @@ function renderSidebarNow() {
     deleteNote: (id) => void deleteNote(id),
     deleteFolder: (id) => void deleteFolder(id),
     renameFolder: (id, title) => void renameFolder(id, title),
+    toggleFolder: (id, collapsed) => void setFolderCollapsed(id, collapsed),
     togglePin: (id) => void togglePin(id),
     moveNote: (id, folderID, index) => void moveNote(id, folderID, index),
     reorderFolders: (ids) => void reorderFolders(ids),
@@ -249,9 +250,10 @@ async function addNote(folderID?: string) {
 async function addFolder() {
   await save.flush();
   const folder = await library.mutate(() => Notes.createFolder("New Folder"));
-  // The store puts one note in the folder it makes, so there is always a note
-  // to show.
-  await openNote(folder.buffers[0]!.id);
+  // The folder comes up empty, its name opening for the user to type over the
+  // placeholder. The note on screen stays open.
+  renameNext(folder.id);
+  renderSidebarNow();
 }
 
 async function deleteNote(id: string) {
@@ -286,6 +288,13 @@ async function deleteFolder(id: string) {
 async function renameFolder(id: string, title: string) {
   await save.flush();
   await library.mutate(() => Notes.renameFolder(id, title));
+}
+
+async function setFolderCollapsed(id: string, collapsed: boolean) {
+  // The row folded itself, so the sidebar is not drawn again here: the state
+  // goes to the cache and to Go, and the next reload reads it back from there.
+  library.setCollapsed(id, collapsed);
+  await Notes.setCollapsed(id, collapsed);
 }
 
 async function moveNote(id: string, folderID: string, index: number) {

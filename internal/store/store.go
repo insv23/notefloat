@@ -50,6 +50,9 @@ type Folder struct {
 	ID      string   `json:"id"`
 	Title   string   `json:"title"`
 	Buffers []Buffer `json:"buffers"`
+	// Collapsed folders show only their name in the sidebar. The notes are still
+	// there, and the folder keeps them folded across launches.
+	Collapsed bool `json:"collapsed,omitempty"`
 }
 
 // Library is what the page needs to draw the sidebar: the folders and where the
@@ -261,7 +264,7 @@ func (n *Notes) Library() (Library, error) {
 	folders := make([]Folder, len(n.library.Folders))
 	for i, folder := range n.library.Folders {
 		folders[i] = folder
-		folders[i].Buffers = append([]Buffer(nil), folder.Buffers...)
+		folders[i].Buffers = append([]Buffer{}, folder.Buffers...)
 	}
 	return Library{
 		Folders:   folders,
@@ -416,20 +419,16 @@ func (n *Notes) create(title string) (Buffer, error) {
 	return Buffer{ID: id, Title: title}, nil
 }
 
-// CreateFolder adds a folder with one empty note in it, and returns it.
+// CreateFolder adds an empty folder and returns it. The notes it holds come
+// later, from the folder's own new-note button.
 func (n *Notes) CreateFolder(title string) (Folder, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if err := n.loadLibrary(); err != nil {
 		return Folder{}, err
 	}
-	folder, buffer, err := n.createFolder(title)
-	if err != nil {
-		return Folder{}, err
-	}
-	folder.Buffers = []Buffer{buffer}
+	folder := Folder{ID: newID(), Title: title, Buffers: []Buffer{}}
 	n.library.Folders = append(n.library.Folders, folder)
-	n.library.Active = buffer.ID
 	if err := n.saveLibrary(); err != nil {
 		return Folder{}, err
 	}
@@ -515,6 +514,24 @@ func (n *Notes) MoveNote(id, folderID string, index int) error {
 	return n.saveLibrary()
 }
 
+// SetCollapsed folds a folder's notes away in the sidebar, or shows them again.
+func (n *Notes) SetCollapsed(id string, collapsed bool) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if err := n.loadLibrary(); err != nil {
+		return err
+	}
+	fi := n.folderIndex(id)
+	if fi < 0 {
+		return fmt.Errorf("unknown folder %q", id)
+	}
+	if n.library.Folders[fi].Collapsed == collapsed {
+		return nil
+	}
+	n.library.Folders[fi].Collapsed = collapsed
+	return n.saveLibrary()
+}
+
 // SetPinned shows or hides a note in the sidebar's Pinned section.
 func (n *Notes) SetPinned(id string, pinned bool) error {
 	n.mu.Lock()
@@ -592,15 +609,18 @@ func (n *Notes) RemoveFolder(ctx context.Context, id string) error {
 
 	// The dialog runs without the lock: the page keeps drawing while the user
 	// decides, and a note saved meanwhile is not held up.
-	what := fmt.Sprintf("%d notes", count)
-	if count == 1 {
-		what = "The note"
+	message := fmt.Sprintf("%d notes and the folder go to the Trash.", count)
+	switch count {
+	case 0:
+		message = "The folder goes to the Trash."
+	case 1:
+		message = "The note and the folder go to the Trash."
 	}
 	answer, err := mygo.Dialog.Message(mygo.MessageOptions{
 		Parent:        mygo.CallerWindow(ctx),
 		Type:          mygo.MessageWarning,
 		Title:         "Delete " + title + "?",
-		Message:       what + " and the folder go to the Trash.",
+		Message:       message,
 		Buttons:       []string{"Delete", "Cancel"},
 		DefaultButton: 0,
 		CancelButton:  1,

@@ -389,10 +389,13 @@ textarea {
   --app-region: no-drag;
 }
 
-/* A section label, unlike a folder's name: small, spaced out, uppercase, and
-   without an icon. Icons belong to things the sidebar holds, and one column of
-   them reads better than a mark on the label as well. */
+/* A section label: small, spaced out, uppercase. The mark that leads it takes
+   the same column as a folder's mark, so the label, the folder names and the
+   note titles under them all start on one line. */
 .group-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin: 10px 0 2px;
   padding: 0 7px;
   font-size: 11px;
@@ -400,6 +403,19 @@ textarea {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* The pin is drawn on a 24 grid where the rest of the sidebar uses 16, so its
+   stroke is set in that grid to land at the weight of the folder marks. */
+.group-title svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* The line under the pinned notes: what is above it is a section, what is
@@ -466,6 +482,32 @@ textarea {
   stroke: currentColor;
   stroke-width: 1.5;
   stroke-linejoin: round;
+}
+
+/* The folder mark is the state: it stands open while the notes under it show,
+   and closed once they are folded away. */
+.folder-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  padding: 3px;
+  margin: -3px;
+  border-radius: 4px;
+  color: inherit;
+  cursor: default;
+  --app-region: no-drag;
+}
+
+.folder-toggle:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.folder.collapsed .buffers {
+  display: none;
 }
 
 .folder-rename {
@@ -623,6 +665,12 @@ textarea {
   stroke-width: 1.3;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The new-folder mark is drawn on a 24 grid where the others use 16: its stroke
+   is set in that grid, so it lands at the weight the rest of the row has. */
+#new-folder svg {
+  stroke-width: 2;
 }
 
 .icon:hover {
